@@ -19,10 +19,10 @@ Prove one repeatable vertical data path by importing a selected completed Grand 
 
 **Steps:**
 
-- [ ] Model only the meetings, sessions, drivers, and result source fields needed for one completed weekend.
-- [ ] Add context propagation, timeouts, input validation, central rate limiting, bounded retries, and actionable errors.
-- [ ] Support required batching or pagination without retaining full production payloads.
-- [ ] Add fixture-based tests for successful, malformed, rate-limited, and failed responses.
+- [x] Model only the meetings, sessions, drivers, and result source fields needed for one completed weekend.
+- [x] Add context propagation, timeouts, input validation, central rate limiting, bounded retries, and actionable errors.
+- [x] Support required batching or pagination without retaining full production payloads.
+- [x] Add fixture-based tests for successful, malformed, rate-limited, and failed responses.
 
 **Complete when:**
 
@@ -43,7 +43,7 @@ Prove one repeatable vertical data path by importing a selected completed Grand 
 
 **Steps:**
 
-- [ ] Add seasons, circuits, meetings, sessions, drivers, constructor entrants, session entries, and session results.
+- [x] Add seasons, circuits, meetings, sessions, drivers, constructor entrants, session entries, and session results.
 - [ ] Store private source keys separately from deterministic public IDs and internal primary keys.
 - [ ] Add source and ingestion timestamps, uniqueness constraints, and ordinary versus nonnumeric classification states.
 - [ ] Test constraints, deterministic ID reproduction, and representative queries.
