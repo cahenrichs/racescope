@@ -1,0 +1,17 @@
+[
+  {
+    "circuit_key": 22,
+    "circuit_short_name": "Monte Carlo",
+    "country_code": "MON",
+    "country_name": "Monaco",
+    "date_end": "2024-05-26T15:00:00+00:00",
+    "date_start": "2024-05-24T11:30:00+00:00",
+    "is_cancelled": false,
+    "location": "Monte Carlo",
+    "meeting_key": 1235,
+    "meeting_name": "Monaco Grand Prix",
+    "meeting_official_name": "FORMULA 1 GRAND PRIX DE MONACO 2024",
+    "year": 2024,
+    "unused_provider_field": "ignored"
+  }
+]
