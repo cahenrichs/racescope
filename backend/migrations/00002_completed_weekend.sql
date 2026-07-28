@@ -1,11 +1,14 @@
 -- +goose Up
 CREATE TABLE seasons (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    public_id TEXT NOT NULL,
     year INTEGER NOT NULL
 );
 
 CREATE TABLE circuits (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    public_id TEXT NOT NULL,
+    source_key BIGINT NOT NULL,
     short_name TEXT NOT NULL,
     country_code TEXT NOT NULL,
     country_name TEXT NOT NULL,
@@ -14,6 +17,8 @@ CREATE TABLE circuits (
 
 CREATE TABLE meetings (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    public_id TEXT NOT NULL,
+    source_key BIGINT NOT NULL,
     season_id BIGINT NOT NULL REFERENCES seasons (id),
     circuit_id BIGINT NOT NULL REFERENCES circuits (id),
     name TEXT NOT NULL,
@@ -25,6 +30,8 @@ CREATE TABLE meetings (
 
 CREATE TABLE sessions (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    public_id TEXT NOT NULL,
+    source_key BIGINT NOT NULL,
     meeting_id BIGINT NOT NULL REFERENCES meetings (id),
     name TEXT NOT NULL,
     type TEXT NOT NULL,
@@ -35,6 +42,7 @@ CREATE TABLE sessions (
 
 CREATE TABLE drivers (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    public_id TEXT NOT NULL,
     first_name TEXT NOT NULL,
     last_name TEXT NOT NULL,
     full_name TEXT NOT NULL,
@@ -43,12 +51,14 @@ CREATE TABLE drivers (
 
 CREATE TABLE constructor_entrants (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    public_id TEXT NOT NULL,
     season_id BIGINT NOT NULL REFERENCES seasons (id),
     name TEXT NOT NULL
 );
 
 CREATE TABLE session_entries (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    public_id TEXT NOT NULL,
     session_id BIGINT NOT NULL REFERENCES sessions (id),
     driver_id BIGINT NOT NULL REFERENCES drivers (id),
     constructor_entrant_id BIGINT NOT NULL REFERENCES constructor_entrants (id),
@@ -58,6 +68,7 @@ CREATE TABLE session_entries (
 
 CREATE TABLE session_results (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    public_id TEXT NOT NULL,
     session_entry_id BIGINT NOT NULL REFERENCES session_entries (id),
     position INTEGER,
     number_of_laps INTEGER,
