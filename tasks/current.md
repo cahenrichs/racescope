@@ -45,8 +45,8 @@ Prove one repeatable vertical data path by importing a selected completed Grand 
 
 - [x] Add seasons, circuits, meetings, sessions, drivers, constructor entrants, session entries, and session results.
 - [x] Store private source keys separately from deterministic public IDs and internal primary keys.
-- [ ] Add source and ingestion timestamps, uniqueness constraints, and ordinary versus nonnumeric classification states.
-- [ ] Test constraints, deterministic ID reproduction, and representative queries.
+- [x] Add source and ingestion timestamps, uniqueness constraints, and ordinary versus nonnumeric classification states.
+- [x] Test constraints, deterministic ID reproduction, and representative queries.
 
 **Complete when:**
 

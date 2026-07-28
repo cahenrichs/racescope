@@ -11,6 +11,22 @@ jobs:
   backend:
     name: Backend
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: racescope_test
+          POSTGRES_USER: racescope
+          POSTGRES_PASSWORD: racescope
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U racescope -d racescope_test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://racescope:racescope@localhost:5432/racescope_test?sslmode=disable
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

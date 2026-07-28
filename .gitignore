@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+/tasks
 
 # Frontend dependencies and output
 frontend/node_modules/
