@@ -1,7 +1,7 @@
 DATABASE_URL ?= postgres://racescope:racescope@localhost:5432/racescope?sslmode=disable
 PORT ?= 8080
 
-.PHONY: build lint test typecheck run migrate-up migrate-down migrate-status
+.PHONY: build lint test typecheck run ingest migrate-up migrate-down migrate-status
 
 build:
 	go build ./...
@@ -17,6 +17,9 @@ typecheck:
 
 run:
 	DATABASE_URL="$(DATABASE_URL)" PORT="$(PORT)" go run ./cmd/api
+
+ingest:
+	go run ./cmd/ingest --season "$(SEASON)" --meeting "$(MEETING)"
 
 migrate-up:
 	DATABASE_URL="$(DATABASE_URL)" go run ./cmd/migrate up

@@ -6,7 +6,7 @@ endif
 DATABASE_URL ?= postgres://racescope:racescope@localhost:5432/racescope?sslmode=disable
 PORT ?= 8080
 
-.PHONY: install check api-run frontend-run db-up db-down db-reset \
+.PHONY: install check api-run ingest frontend-run db-up db-down db-reset \
 	migrate-up migrate-down migrate-status backend-build backend-lint backend-test \
 	backend-typecheck frontend-build frontend-lint frontend-test frontend-typecheck
 
@@ -17,6 +17,9 @@ check: backend-lint backend-test backend-typecheck backend-build frontend-lint f
 
 api-run:
 	$(MAKE) -C backend run DATABASE_URL="$(DATABASE_URL)" PORT="$(PORT)"
+
+ingest:
+	$(MAKE) -C backend ingest SEASON="$(SEASON)" MEETING="$(MEETING)"
 
 frontend-run:
 	npm --prefix frontend run dev

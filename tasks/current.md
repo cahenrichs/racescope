@@ -69,7 +69,7 @@ Prove one repeatable vertical data path by importing a selected completed Grand 
 
 **Steps:**
 
-- [ ] Add a manual CLI accepting season and meeting options.
+- [x] Add a manual CLI accepting season and meeting options.
 - [ ] Transform provider records into stable drivers and season-specific constructor entrants through reviewed mappings.
 - [ ] Quarantine unknown identities while allowing unrelated valid records to continue.
 - [ ] Publish a complete weekend transactionally and preserve the previous complete unit on failure.
