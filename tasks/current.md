@@ -134,3 +134,8 @@ Prove one repeatable vertical data path by importing a selected completed Grand 
 - A user can navigate from the dashboard to the selected race and inspect its full result.
 - All displayed race data comes from the backend contracts.
 - Frontend tests and type checking pass.
+
+### Deferred Consideration
+
+- For now, any unknown driver or constructor identity blocks publication of the entire weekend and leaves the previous complete version readable. Reconsider later whether incomplete non-race sessions may publish while still requiring a complete Grand Prix classification.
+- For V1, keep only the latest published weekend data and record every import in an `import_runs` audit table. Add full snapshot history only if a concrete need emerges for rollback or comparison; retaining one or two prior versions would be inexpensive but adds versioning complexity.

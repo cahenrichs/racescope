@@ -19,7 +19,7 @@ run:
 	DATABASE_URL="$(DATABASE_URL)" PORT="$(PORT)" go run ./cmd/api
 
 ingest:
-	go run ./cmd/ingest --season "$(SEASON)" --meeting "$(MEETING)"
+	DATABASE_URL="$(DATABASE_URL)" OPENF1_BASE_URL="$(OPENF1_BASE_URL)" go run ./cmd/ingest --season "$(SEASON)" --meeting "$(MEETING)"
 
 migrate-up:
 	DATABASE_URL="$(DATABASE_URL)" go run ./cmd/migrate up
