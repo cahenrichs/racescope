@@ -49,16 +49,17 @@ type Driver struct {
 	TeamName     string `json:"team_name"`
 }
 
-// ResultValue preserves OpenF1's number, text, null, or qualifying-array result values.
-// Exactly one of Number, Text, or Numbers is populated; all nil represents JSON null.
+// ResultValue preserves whether an OpenF1 field was missing, null, numeric, text, or an array.
+// Exactly one of Number, Text, or Numbers is populated. Present distinguishes JSON null from omission.
 type ResultValue struct {
+	Present bool
 	Number  *float64
 	Text    *string
 	Numbers []*float64
 }
 
 func (v *ResultValue) UnmarshalJSON(data []byte) error {
-	*v = ResultValue{}
+	*v = ResultValue{Present: true}
 	data = bytes.TrimSpace(data)
 	if bytes.Equal(data, []byte("null")) {
 		return nil

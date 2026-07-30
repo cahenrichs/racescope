@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -21,6 +22,8 @@ type Target struct {
 type Source interface {
 	Meetings(context.Context, int) ([]openf1.Meeting, error)
 	Sessions(context.Context, int) ([]openf1.Session, error)
+	Drivers(context.Context, []openf1.Session) ([]openf1.Driver, error)
+	SessionResults(context.Context, []openf1.Session) ([]openf1.SessionResult, error)
 }
 
 // Snapshot keeps private source keys beside provider-independent domain records.
@@ -28,12 +31,19 @@ type Snapshot struct {
 	Weekend           domain.Weekend
 	MeetingSourceKey  int
 	SessionSourceKeys map[domain.PublicID]int
+	Drivers           []domain.Driver
+	Constructors      []domain.ConstructorEntrant
+	Entries           []domain.SessionEntry
+	Results           []domain.SessionResult
 }
 
 // Outcome describes a completed fetch and transformation. Publication is a later import step.
 type Outcome struct {
 	MeetingID     domain.PublicID
 	SessionCount  int
+	EntryCount    int
+	ResultCount   int
+	ErrorCount    int
 	TransformedAt time.Time
 }
 
@@ -61,11 +71,51 @@ func (i *Importer) ImportWeekend(ctx context.Context, target Target) (Outcome, e
 	if err != nil {
 		return Outcome{}, err
 	}
-	return Outcome{
+
+	raceSourceKey := snapshot.SessionSourceKeys[snapshot.Weekend.GrandPrixSessionID]
+	var raceSource openf1.Session
+	for _, session := range sessions {
+		if session.SessionKey == raceSourceKey {
+			raceSource = session
+			break
+		}
+	}
+	drivers, err := i.source.Drivers(ctx, []openf1.Session{raceSource})
+	if err != nil {
+		return Outcome{}, fmt.Errorf("fetch Grand Prix entries: %w", err)
+	}
+	results, err := i.source.SessionResults(ctx, []openf1.Session{raceSource})
+	if err != nil {
+		return Outcome{}, fmt.Errorf("fetch Grand Prix classification: %w", err)
+	}
+
+	var raceSession domain.Session
+	for _, session := range snapshot.Weekend.Sessions {
+		if session.PublicID == snapshot.Weekend.GrandPrixSessionID {
+			raceSession = session
+			break
+		}
+	}
+	raceData, transformErr := TransformRace(target, snapshot.Weekend.Meeting.Season, raceSession, raceSourceKey, drivers, results)
+	snapshot.Drivers = raceData.Drivers
+	snapshot.Constructors = raceData.Constructors
+	snapshot.Entries = raceData.Entries
+	snapshot.Results = raceData.Results
+	outcome := Outcome{
 		MeetingID:     snapshot.Weekend.Meeting.PublicID,
 		SessionCount:  len(snapshot.Weekend.Sessions),
+		EntryCount:    len(snapshot.Entries),
+		ResultCount:   len(snapshot.Results),
 		TransformedAt: i.now().UTC(),
-	}, nil
+	}
+	if transformErr != nil {
+		var quarantined *QuarantineError
+		if errors.As(transformErr, &quarantined) {
+			outcome.ErrorCount = len(quarantined.Errors)
+		}
+		return outcome, transformErr
+	}
+	return outcome, nil
 }
 
 // TransformWeekend validates exact reviewed identities and creates deterministic domain records.

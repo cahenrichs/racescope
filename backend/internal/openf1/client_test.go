@@ -68,10 +68,10 @@ func TestClientFetchesCompletedWeekendResources(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SessionResults() error = %v", err)
 	}
-	if len(results) != 2 || results[0].Duration.Number == nil || *results[0].Duration.Number != 8345.411 {
+	if len(results) != 2 || !results[0].Duration.Present || results[0].Duration.Number == nil || *results[0].Duration.Number != 8345.411 {
 		t.Fatalf("SessionResults() = %#v", results)
 	}
-	if results[1].GapToLeader.Text == nil || *results[1].GapToLeader.Text != "+1 LAP" || results[1].Duration.Number != nil {
+	if !results[1].Duration.Present || results[1].GapToLeader.Text == nil || *results[1].GapToLeader.Text != "+1 LAP" || results[1].Duration.Number != nil {
 		t.Fatalf("SessionResults() did not preserve nonnumeric/null values: %#v", results[1])
 	}
 }

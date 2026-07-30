@@ -31,7 +31,7 @@ func TestRunReportsSuccessfulOutcome(t *testing.T) {
 	build := func(context.Context) (commandRuntime, error) {
 		return commandRuntime{
 			importer: stubImporter{outcome: ingest.Outcome{
-				MeetingID: "meeting_test", SessionCount: 5,
+				MeetingID: "meeting_test", SessionCount: 5, EntryCount: 20, ResultCount: 20,
 				TransformedAt: time.Date(2026, time.July, 29, 12, 0, 0, 0, time.UTC),
 			}},
 			close: func() { closed = true },
@@ -45,7 +45,7 @@ func TestRunReportsSuccessfulOutcome(t *testing.T) {
 	if !closed {
 		t.Fatal("run() did not close its runtime")
 	}
-	if got := output.String(); !strings.Contains(got, "meeting_id=meeting_test sessions=5") || !strings.Contains(got, "2026-07-29T12:00:00Z") {
+	if got := output.String(); !strings.Contains(got, "meeting_id=meeting_test sessions=5 entries=20 results=20") || !strings.Contains(got, "2026-07-29T12:00:00Z") {
 		t.Fatalf("run() output = %q", got)
 	}
 }
@@ -83,6 +83,30 @@ func TestRunReturnsSetupAndImportFailures(t *testing.T) {
 				t.Fatalf("run() error = %v, want containing %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestRunReportsQuarantineErrors(t *testing.T) {
+	t.Parallel()
+
+	var errorOutput bytes.Buffer
+	quarantine := &ingest.QuarantineError{Errors: []ingest.TransformError{{
+		Code: "unknown_driver", Entity: "driver", SourceValue: "Mystery DRIVER", DriverNumber: 99,
+		Message: "full name has no reviewed mapping",
+	}}}
+	build := func(context.Context) (commandRuntime, error) {
+		return commandRuntime{
+			importer: stubImporter{outcome: ingest.Outcome{MeetingID: "meeting_test", SessionCount: 5, ErrorCount: 1}, err: quarantine},
+			close:    func() {},
+		}, nil
+	}
+
+	err := run(context.Background(), []string{"--season", "2024", "--meeting", "1235"}, &bytes.Buffer{}, &errorOutput, 2026, build)
+	if !errors.Is(err, quarantine) {
+		t.Fatalf("run() error = %v, want quarantine", err)
+	}
+	if got := errorOutput.String(); !strings.Contains(got, "weekend quarantined") || !strings.Contains(got, `unknown_driver: entity=driver source="Mystery DRIVER" driver_number=99`) {
+		t.Fatalf("run() error output = %q", got)
 	}
 }
 

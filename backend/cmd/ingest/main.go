@@ -61,10 +61,19 @@ func run(ctx context.Context, args []string, output, errorOutput io.Writer, curr
 
 	outcome, err := runtime.importer.ImportWeekend(ctx, ingest.Target{Season: options.season, MeetingKey: options.meetingKey})
 	if err != nil {
+		var quarantined *ingest.QuarantineError
+		if errors.As(err, &quarantined) {
+			fmt.Fprintf(errorOutput, "weekend quarantined: meeting_id=%s sessions=%d entries=%d results=%d errors=%d\n",
+				outcome.MeetingID, outcome.SessionCount, outcome.EntryCount, outcome.ResultCount, len(quarantined.Errors))
+			for _, problem := range quarantined.Errors {
+				fmt.Fprintf(errorOutput, "%s: entity=%s source=%q driver_number=%d: %s\n",
+					problem.Code, problem.Entity, problem.SourceValue, problem.DriverNumber, problem.Message)
+			}
+		}
 		return fmt.Errorf("import season %d meeting %d: %w", options.season, options.meetingKey, err)
 	}
-	fmt.Fprintf(output, "weekend transformed: meeting_id=%s sessions=%d transformed_at=%s\n",
-		outcome.MeetingID, outcome.SessionCount, outcome.TransformedAt.Format(time.RFC3339))
+	fmt.Fprintf(output, "weekend transformed: meeting_id=%s sessions=%d entries=%d results=%d transformed_at=%s\n",
+		outcome.MeetingID, outcome.SessionCount, outcome.EntryCount, outcome.ResultCount, outcome.TransformedAt.Format(time.RFC3339))
 	return nil
 }
 

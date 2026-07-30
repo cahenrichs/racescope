@@ -151,6 +151,14 @@ func (source fakeSource) Sessions(context.Context, int) ([]openf1.Session, error
 	return source.sessions, source.err
 }
 
+func (source fakeSource) Drivers(context.Context, []openf1.Session) ([]openf1.Driver, error) {
+	return nil, source.err
+}
+
+func (source fakeSource) SessionResults(context.Context, []openf1.Session) ([]openf1.SessionResult, error) {
+	return nil, source.err
+}
+
 func monacoMeetings() []openf1.Meeting {
 	return []openf1.Meeting{{
 		CircuitKey: 22, CircuitShortName: "Monte Carlo", CountryCode: "MON", CountryName: "Monaco",
