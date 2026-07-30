@@ -41,8 +41,10 @@ type weekendImporter interface {
 }
 
 type commandRuntime struct {
-	importer weekendImporter
-	close    func()
+	importer       weekendImporter
+	audit          database.AuditDB
+	requestRecords func() []openf1.RequestRecord
+	close          func()
 }
 
 type runtimeFactory func(context.Context) (commandRuntime, error)
@@ -59,7 +61,25 @@ func run(ctx context.Context, args []string, output, errorOutput io.Writer, curr
 	}
 	defer runtime.close()
 
-	outcome, err := runtime.importer.ImportWeekend(ctx, ingest.Target{Season: options.season, MeetingKey: options.meetingKey})
+	target := ingest.Target{Season: options.season, MeetingKey: options.meetingKey}
+	var runID int64
+	if runtime.audit != nil {
+		runID, err = database.CreateImportRun(ctx, runtime.audit, target.Season, target.MeetingKey, time.Now().UTC())
+		if err != nil {
+			return err
+		}
+	}
+
+	outcome, importErr := runtime.importer.ImportWeekend(ctx, target)
+	if runtime.audit != nil {
+		auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		auditErr := recordAudit(auditCtx, runtime, runID, outcome, importErr)
+		cancel()
+		if auditErr != nil {
+			importErr = errors.Join(importErr, auditErr)
+		}
+	}
+	err = importErr
 	if err != nil {
 		var quarantined *ingest.QuarantineError
 		if errors.As(err, &quarantined) {
@@ -92,7 +112,56 @@ func newRuntime(ctx context.Context) (commandRuntime, error) {
 		return commandRuntime{}, fmt.Errorf("connect to PostgreSQL: %w", err)
 	}
 
-	return commandRuntime{importer: ingest.NewImporter(client), close: pool.Close}, nil
+	return commandRuntime{
+		importer: ingest.NewImporter(client, database.NewWeekendPublisher(pool)), audit: pool,
+		requestRecords: client.RequestRecords, close: pool.Close,
+	}, nil
+}
+
+func recordAudit(ctx context.Context, runtime commandRuntime, runID int64, outcome ingest.Outcome, importErr error) error {
+	var auditErrors []error
+	if runtime.requestRecords != nil {
+		for _, request := range runtime.requestRecords() {
+			err := database.RecordImportRunRequest(ctx, runtime.audit, runID, database.ImportRunRequest{
+				Endpoint: request.Endpoint, Parameters: request.Parameters, ResponseStatus: request.ResponseStatus,
+				FetchedAt: request.FetchedAt, RecordCount: request.RecordCount, ResponseSHA256: request.ResponseSHA256,
+			})
+			if err != nil {
+				auditErrors = append(auditErrors, err)
+			}
+		}
+	}
+
+	status := "succeeded"
+	var publishedAt *time.Time
+	if importErr == nil {
+		published := outcome.TransformedAt
+		publishedAt = &published
+	} else {
+		status = "failed"
+		var quarantined *ingest.QuarantineError
+		if errors.As(importErr, &quarantined) {
+			status = "quarantined"
+			for order, problem := range quarantined.Errors {
+				err := database.RecordImportRunError(ctx, runtime.audit, runID, database.ImportRunError{
+					Order: order, Code: problem.Code, Entity: problem.Entity,
+					SourceContext: map[string]any{"source_value": problem.SourceValue, "driver_number": problem.DriverNumber},
+					Message:       problem.Message,
+				})
+				if err != nil {
+					auditErrors = append(auditErrors, err)
+				}
+			}
+		}
+	}
+	if err := database.FinishImportRun(ctx, runtime.audit, runID, database.ImportRunCompletion{
+		Status: status, FinishedAt: time.Now().UTC(), SessionCount: outcome.SessionCount,
+		EntryCount: outcome.EntryCount, ResultCount: outcome.ResultCount, ErrorCount: outcome.ErrorCount,
+		PublishedAt: publishedAt,
+	}); err != nil {
+		auditErrors = append(auditErrors, err)
+	}
+	return errors.Join(auditErrors...)
 }
 
 func parseOptions(args []string, output io.Writer, currentYear int) (options, error) {

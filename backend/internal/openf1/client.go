@@ -3,12 +3,14 @@ package openf1
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -58,6 +60,18 @@ type Client struct {
 	maxResponseBytes int64
 	now              func() time.Time
 	limiter          requestLimiter
+	recordsMu        sync.Mutex
+	requestRecords   []RequestRecord
+}
+
+// RequestRecord is sanitized response metadata retained for import auditing, never the response body.
+type RequestRecord struct {
+	Endpoint       string
+	Parameters     map[string][]string
+	ResponseStatus int
+	FetchedAt      time.Time
+	RecordCount    int
+	ResponseSHA256 string
 }
 
 type requestLimiter struct {
@@ -197,6 +211,14 @@ func (c *Client) SessionResults(ctx context.Context, sessions []Session) ([]Sess
 	return results, nil
 }
 
+func (c *Client) RequestRecords() []RequestRecord {
+	c.recordsMu.Lock()
+	defer c.recordsMu.Unlock()
+	records := make([]RequestRecord, len(c.requestRecords))
+	copy(records, c.requestRecords)
+	return records
+}
+
 func (c *Client) validateDetailBatch(sessions []Session) error {
 	if len(sessions) == 0 || len(sessions) > MaxSessionsPerBatch {
 		return fmt.Errorf("OpenF1 session batch size must be between 1 and %d", MaxSessionsPerBatch)
@@ -253,10 +275,12 @@ func (c *Client) get(ctx context.Context, endpoint string, query url.Values, des
 			return &RequestError{Endpoint: endpoint, StatusCode: resp.StatusCode, Attempt: attempt, Err: readErr}
 		}
 		if int64(len(body)) > c.maxResponseBytes {
+			c.recordRequest(endpoint, query, resp.StatusCode, body, 0)
 			return &RequestError{Endpoint: endpoint, StatusCode: resp.StatusCode, Attempt: attempt, Err: ErrResponseTooLarge}
 		}
 
 		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+			c.recordRequest(endpoint, query, resp.StatusCode, body, 0)
 			requestErr := &RequestError{Endpoint: endpoint, StatusCode: resp.StatusCode, Attempt: attempt, Body: responseMessage(body)}
 			if attempt <= c.maxRetries && (resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError) {
 				if err := c.waitForRetry(ctx, attempt, retryAfter(resp.Header.Get("Retry-After"), c.now())); err != nil {
@@ -270,14 +294,43 @@ func (c *Client) get(ctx context.Context, endpoint string, query url.Values, des
 
 		decoder := json.NewDecoder(bytes.NewReader(body))
 		if err := decoder.Decode(destination); err != nil {
+			c.recordRequest(endpoint, query, resp.StatusCode, body, 0)
 			return &RequestError{Endpoint: endpoint, StatusCode: resp.StatusCode, Attempt: attempt, Err: fmt.Errorf("decode response: %w", err)}
 		}
 		if err := ensureJSONEnd(decoder); err != nil {
+			c.recordRequest(endpoint, query, resp.StatusCode, body, 0)
 			return &RequestError{Endpoint: endpoint, StatusCode: resp.StatusCode, Attempt: attempt, Err: err}
 		}
+		c.recordRequest(endpoint, query, resp.StatusCode, body, decodedRecordCount(destination))
 		return nil
 	}
 	panic("unreachable")
+}
+
+func (c *Client) recordRequest(endpoint string, query url.Values, status int, body []byte, recordCount int) {
+	hash := sha256.Sum256(body)
+	parameters := make(map[string][]string, len(query))
+	for key, values := range query {
+		parameters[key] = append([]string(nil), values...)
+	}
+	record := RequestRecord{
+		Endpoint: endpoint, Parameters: parameters, ResponseStatus: status, FetchedAt: c.now().UTC(),
+		RecordCount: recordCount, ResponseSHA256: fmt.Sprintf("%x", hash),
+	}
+	c.recordsMu.Lock()
+	c.requestRecords = append(c.requestRecords, record)
+	c.recordsMu.Unlock()
+}
+
+func decodedRecordCount(destination any) int {
+	value := reflect.ValueOf(destination)
+	if value.Kind() == reflect.Pointer && !value.IsNil() {
+		value = value.Elem()
+	}
+	if value.Kind() == reflect.Slice || value.Kind() == reflect.Array {
+		return value.Len()
+	}
+	return 0
 }
 
 func (l *requestLimiter) wait(ctx context.Context, now func() time.Time) error {

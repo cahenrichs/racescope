@@ -74,6 +74,15 @@ func TestClientFetchesCompletedWeekendResources(t *testing.T) {
 	if !results[1].Duration.Present || results[1].GapToLeader.Text == nil || *results[1].GapToLeader.Text != "+1 LAP" || results[1].Duration.Number != nil {
 		t.Fatalf("SessionResults() did not preserve nonnumeric/null values: %#v", results[1])
 	}
+	records := client.RequestRecords()
+	if len(records) != 4 || records[0].Endpoint != "meetings" || records[0].Parameters["year"][0] != "2024" || records[0].RecordCount != 1 {
+		t.Fatalf("RequestRecords() = %+v", records)
+	}
+	for _, record := range records {
+		if record.ResponseStatus != http.StatusOK || len(record.ResponseSHA256) != 64 || record.FetchedAt.IsZero() {
+			t.Fatalf("request record = %+v", record)
+		}
+	}
 }
 
 func TestClientRejectsMalformedResponse(t *testing.T) {
@@ -107,6 +116,9 @@ func TestClientRetriesRateLimitedResponse(t *testing.T) {
 	}
 	if len(meetings) != 1 || requests.Load() != 2 {
 		t.Fatalf("Meetings() count = %d, requests = %d", len(meetings), requests.Load())
+	}
+	if records := client.RequestRecords(); len(records) != 2 || records[0].ResponseStatus != http.StatusTooManyRequests || records[1].ResponseStatus != http.StatusOK {
+		t.Fatalf("RequestRecords() = %+v", records)
 	}
 }
 

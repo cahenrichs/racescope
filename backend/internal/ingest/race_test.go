@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/clint/f1/backend/internal/domain"
 	"github.com/clint/f1/backend/internal/openf1"
@@ -110,7 +111,8 @@ func TestImporterFetchesDetailsForGrandPrixOnly(t *testing.T) {
 		drivers: []openf1.Driver{raceDriver(16, "Charles", "Leclerc", "Charles LECLERC", "LEC", "Ferrari")},
 		results: []openf1.SessionResult{{DriverNumber: 16, MeetingKey: 1235, SessionKey: 9500, Position: &one}},
 	}
-	importer := NewImporter(source)
+	publisher := &recordingPublisher{}
+	importer := NewImporter(source, publisher)
 	outcome, err := importer.ImportWeekend(context.Background(), Target{Season: 2024, MeetingKey: 1235})
 	if err != nil {
 		t.Fatalf("ImportWeekend() error = %v", err)
@@ -120,6 +122,9 @@ func TestImporterFetchesDetailsForGrandPrixOnly(t *testing.T) {
 	}
 	if len(source.driverSessions) != 1 || source.driverSessions[0].SessionName != "Race" || len(source.resultSessions) != 1 || source.resultSessions[0].SessionName != "Race" {
 		t.Fatalf("detail requests used drivers=%+v results=%+v", source.driverSessions, source.resultSessions)
+	}
+	if publisher.calls != 1 || publisher.snapshot.MeetingSourceKey != 1235 || len(publisher.snapshot.Entries) != 1 {
+		t.Fatalf("publisher = %+v", publisher)
 	}
 }
 
@@ -150,6 +155,18 @@ type recordingSource struct {
 	results        []openf1.SessionResult
 	driverSessions []openf1.Session
 	resultSessions []openf1.Session
+}
+
+type recordingPublisher struct {
+	calls    int
+	snapshot Snapshot
+	err      error
+}
+
+func (publisher *recordingPublisher) ReplaceWeekend(_ context.Context, snapshot Snapshot, _ time.Time) error {
+	publisher.calls++
+	publisher.snapshot = snapshot
+	return publisher.err
 }
 
 func (source *recordingSource) Meetings(context.Context, int) ([]openf1.Meeting, error) {

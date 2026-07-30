@@ -30,11 +30,17 @@ type Source interface {
 type Snapshot struct {
 	Weekend           domain.Weekend
 	MeetingSourceKey  int
+	CircuitSourceKey  int
 	SessionSourceKeys map[domain.PublicID]int
 	Drivers           []domain.Driver
 	Constructors      []domain.ConstructorEntrant
 	Entries           []domain.SessionEntry
 	Results           []domain.SessionResult
+}
+
+// Publisher atomically makes one fully validated snapshot readable.
+type Publisher interface {
+	ReplaceWeekend(context.Context, Snapshot, time.Time) error
 }
 
 // Outcome describes a completed fetch and transformation. Publication is a later import step.
@@ -49,12 +55,17 @@ type Outcome struct {
 
 // Importer fetches and transforms one reviewed weekend.
 type Importer struct {
-	source Source
-	now    func() time.Time
+	source    Source
+	publisher Publisher
+	now       func() time.Time
 }
 
-func NewImporter(source Source) *Importer {
-	return &Importer{source: source, now: time.Now}
+func NewImporter(source Source, publishers ...Publisher) *Importer {
+	var publisher Publisher
+	if len(publishers) > 0 {
+		publisher = publishers[0]
+	}
+	return &Importer{source: source, publisher: publisher, now: time.Now}
 }
 
 func (i *Importer) ImportWeekend(ctx context.Context, target Target) (Outcome, error) {
@@ -101,12 +112,13 @@ func (i *Importer) ImportWeekend(ctx context.Context, target Target) (Outcome, e
 	snapshot.Constructors = raceData.Constructors
 	snapshot.Entries = raceData.Entries
 	snapshot.Results = raceData.Results
+	transformedAt := i.now().UTC()
 	outcome := Outcome{
 		MeetingID:     snapshot.Weekend.Meeting.PublicID,
 		SessionCount:  len(snapshot.Weekend.Sessions),
 		EntryCount:    len(snapshot.Entries),
 		ResultCount:   len(snapshot.Results),
-		TransformedAt: i.now().UTC(),
+		TransformedAt: transformedAt,
 	}
 	if transformErr != nil {
 		var quarantined *QuarantineError
@@ -114,6 +126,11 @@ func (i *Importer) ImportWeekend(ctx context.Context, target Target) (Outcome, e
 			outcome.ErrorCount = len(quarantined.Errors)
 		}
 		return outcome, transformErr
+	}
+	if i.publisher != nil {
+		if err := i.publisher.ReplaceWeekend(ctx, snapshot, transformedAt); err != nil {
+			return outcome, fmt.Errorf("publish complete weekend: %w", err)
+		}
 	}
 	return outcome, nil
 }
@@ -168,6 +185,7 @@ func TransformWeekend(target Target, meetings []openf1.Meeting, sessions []openf
 			Sessions: domainSessions, GrandPrixSessionID: grandPrixID,
 		},
 		MeetingSourceKey:  meeting.MeetingKey,
+		CircuitSourceKey:  meeting.CircuitKey,
 		SessionSourceKeys: sourceKeys,
 	}, nil
 }
