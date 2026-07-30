@@ -14,29 +14,47 @@ func TestReplaceWeekendIsIdempotentAndRemovesDisappearedRows(t *testing.T) {
 	publisher := NewWeekendPublisher(pool)
 	ctx := context.Background()
 	first := publicationSnapshot(t)
+	publisher.now = func() time.Time { return time.Date(2026, time.July, 30, 10, 0, 0, 0, time.UTC) }
 
-	if err := publisher.ReplaceWeekend(ctx, first, time.Date(2026, time.July, 30, 10, 0, 0, 0, time.UTC)); err != nil {
+	if _, err := publisher.ReplaceWeekend(ctx, first); err != nil {
 		t.Fatalf("first ReplaceWeekend() error = %v", err)
 	}
-	if err := publisher.ReplaceWeekend(ctx, first, time.Date(2026, time.July, 30, 11, 0, 0, 0, time.UTC)); err != nil {
+	if _, err := publisher.ReplaceWeekend(ctx, first); err != nil {
 		t.Fatalf("repeated ReplaceWeekend() error = %v", err)
 	}
 	assertTableCount(t, pool, "meetings", 1)
 	assertTableCount(t, pool, "sessions", 2)
 	assertTableCount(t, pool, "session_entries", 1)
 	assertTableCount(t, pool, "session_results", 1)
+	var meetingFetchedAt, sessionFetchedAt, driverFetchedAt, resultFetchedAt, storedPublishedAt time.Time
+	err := pool.QueryRow(ctx, `
+		SELECT m.source_fetched_at, s.source_fetched_at, d.source_fetched_at, r.source_fetched_at, m.published_at
+		FROM meetings m
+		JOIN sessions s ON s.meeting_id = m.id AND s.name = 'Race'
+		JOIN session_entries e ON e.session_id = s.id
+		JOIN drivers d ON d.id = e.driver_id
+		JOIN session_results r ON r.session_entry_id = e.id`).Scan(
+		&meetingFetchedAt, &sessionFetchedAt, &driverFetchedAt, &resultFetchedAt, &storedPublishedAt)
+	if err != nil {
+		t.Fatalf("query source and publication timestamps: %v", err)
+	}
+	if !meetingFetchedAt.Equal(first.SourceFetchedAt.Meetings) || !sessionFetchedAt.Equal(first.SourceFetchedAt.Sessions) ||
+		!driverFetchedAt.Equal(first.SourceFetchedAt.Drivers) || !resultFetchedAt.Equal(first.SourceFetchedAt.Results) ||
+		!storedPublishedAt.Equal(publisher.now()) {
+		t.Fatalf("stored timestamps = %s/%s/%s/%s published %s", meetingFetchedAt, sessionFetchedAt, driverFetchedAt, resultFetchedAt, storedPublishedAt)
+	}
 
 	replacement := first
 	replacement.Weekend.Sessions = replacement.Weekend.Sessions[1:]
 	delete(replacement.SessionSourceKeys, first.Weekend.Sessions[0].PublicID)
-	if err := publisher.ReplaceWeekend(ctx, replacement, time.Date(2026, time.July, 30, 12, 0, 0, 0, time.UTC)); err != nil {
+	if _, err := publisher.ReplaceWeekend(ctx, replacement); err != nil {
 		t.Fatalf("replacement ReplaceWeekend() error = %v", err)
 	}
 	assertTableCount(t, pool, "sessions", 1)
 
 	var remainingName, durationKind, gapKind string
 	var sourceOrder int
-	err := pool.QueryRow(ctx, `
+	err = pool.QueryRow(ctx, `
 		SELECT s.name, r.duration_kind, r.gap_to_leader_kind, r.source_order
 		FROM sessions s
 		JOIN session_entries e ON e.session_id = s.id
@@ -49,13 +67,34 @@ func TestReplaceWeekendIsIdempotentAndRemovesDisappearedRows(t *testing.T) {
 	}
 }
 
+func TestInterruptedReplacementLeavesPublishedWeekendReadable(t *testing.T) {
+	pool := newIntegrationPool(t)
+	publisher := NewWeekendPublisher(pool)
+	ctx := context.Background()
+	snapshot := publicationSnapshot(t)
+	if _, err := publisher.ReplaceWeekend(ctx, snapshot); err != nil {
+		t.Fatalf("initial ReplaceWeekend() error = %v", err)
+	}
+
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := publisher.ReplaceWeekend(cancelled, snapshot); err == nil {
+		t.Fatal("interrupted ReplaceWeekend() error = nil")
+	}
+	weekend, err := WeekendByPublicID(ctx, pool, snapshot.Weekend.Meeting.PublicID)
+	if err != nil || weekend.Name != snapshot.Weekend.Meeting.Name {
+		t.Fatalf("published weekend after interruption = %+v, error %v", weekend, err)
+	}
+}
+
 func TestFailedReplacementRollsBackAndPreservesAuditRows(t *testing.T) {
 	pool := newIntegrationPool(t)
 	publisher := NewWeekendPublisher(pool)
 	ctx := context.Background()
 	snapshot := publicationSnapshot(t)
 	publishedAt := time.Date(2026, time.July, 30, 10, 0, 0, 0, time.UTC)
-	if err := publisher.ReplaceWeekend(ctx, snapshot, publishedAt); err != nil {
+	publisher.now = func() time.Time { return publishedAt }
+	if _, err := publisher.ReplaceWeekend(ctx, snapshot); err != nil {
 		t.Fatalf("initial ReplaceWeekend() error = %v", err)
 	}
 
@@ -91,7 +130,7 @@ func TestFailedReplacementRollsBackAndPreservesAuditRows(t *testing.T) {
 	broken.Weekend.Sessions = append(broken.Weekend.Sessions, duplicate)
 	broken.SessionSourceKeys = cloneSourceKeys(broken.SessionSourceKeys)
 	broken.SessionSourceKeys[duplicate.PublicID] = broken.SessionSourceKeys[broken.Weekend.Sessions[0].PublicID]
-	if err := publisher.ReplaceWeekend(ctx, broken, publishedAt.Add(2*time.Hour)); err == nil {
+	if _, err := publisher.ReplaceWeekend(ctx, broken); err == nil {
 		t.Fatal("broken ReplaceWeekend() error = nil")
 	}
 
@@ -153,6 +192,10 @@ func publicationSnapshot(t *testing.T) ingest.Snapshot {
 		SessionSourceKeys: map[domain.PublicID]int{practice.PublicID: 9496, race.PublicID: 9500},
 		Drivers:           []domain.Driver{driver}, Constructors: []domain.ConstructorEntrant{constructor},
 		Entries: []domain.SessionEntry{entry}, Results: []domain.SessionResult{result},
+		SourceFetchedAt: ingest.SourceFetchTimes{
+			Meetings: meeting.DateEnd.Add(time.Hour), Sessions: meeting.DateEnd.Add(2 * time.Hour),
+			Drivers: meeting.DateEnd.Add(3 * time.Hour), Results: meeting.DateEnd.Add(4 * time.Hour),
+		},
 	}
 }
 

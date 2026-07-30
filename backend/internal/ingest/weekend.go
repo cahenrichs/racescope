@@ -24,6 +24,14 @@ type Source interface {
 	Sessions(context.Context, int) ([]openf1.Session, error)
 	Drivers(context.Context, []openf1.Session) ([]openf1.Driver, error)
 	SessionResults(context.Context, []openf1.Session) ([]openf1.SessionResult, error)
+	RequestRecords() []openf1.RequestRecord
+}
+
+type SourceFetchTimes struct {
+	Meetings time.Time
+	Sessions time.Time
+	Drivers  time.Time
+	Results  time.Time
 }
 
 // Snapshot keeps private source keys beside provider-independent domain records.
@@ -36,11 +44,12 @@ type Snapshot struct {
 	Constructors      []domain.ConstructorEntrant
 	Entries           []domain.SessionEntry
 	Results           []domain.SessionResult
+	SourceFetchedAt   SourceFetchTimes
 }
 
 // Publisher atomically makes one fully validated snapshot readable.
 type Publisher interface {
-	ReplaceWeekend(context.Context, Snapshot, time.Time) error
+	ReplaceWeekend(context.Context, Snapshot) (time.Time, error)
 }
 
 // Outcome describes a completed fetch and transformation. Publication is a later import step.
@@ -51,6 +60,7 @@ type Outcome struct {
 	ResultCount   int
 	ErrorCount    int
 	TransformedAt time.Time
+	PublishedAt   time.Time
 }
 
 // Importer fetches and transforms one reviewed weekend.
@@ -82,6 +92,10 @@ func (i *Importer) ImportWeekend(ctx context.Context, target Target) (Outcome, e
 	if err != nil {
 		return Outcome{}, err
 	}
+	outcome := Outcome{
+		MeetingID:    snapshot.Weekend.Meeting.PublicID,
+		SessionCount: len(snapshot.Weekend.Sessions),
+	}
 
 	raceSourceKey := snapshot.SessionSourceKeys[snapshot.Weekend.GrandPrixSessionID]
 	var raceSource openf1.Session
@@ -93,11 +107,11 @@ func (i *Importer) ImportWeekend(ctx context.Context, target Target) (Outcome, e
 	}
 	drivers, err := i.source.Drivers(ctx, []openf1.Session{raceSource})
 	if err != nil {
-		return Outcome{}, fmt.Errorf("fetch Grand Prix entries: %w", err)
+		return outcome, fmt.Errorf("fetch Grand Prix entries: %w", err)
 	}
 	results, err := i.source.SessionResults(ctx, []openf1.Session{raceSource})
 	if err != nil {
-		return Outcome{}, fmt.Errorf("fetch Grand Prix classification: %w", err)
+		return outcome, fmt.Errorf("fetch Grand Prix classification: %w", err)
 	}
 
 	var raceSession domain.Session
@@ -113,13 +127,10 @@ func (i *Importer) ImportWeekend(ctx context.Context, target Target) (Outcome, e
 	snapshot.Entries = raceData.Entries
 	snapshot.Results = raceData.Results
 	transformedAt := i.now().UTC()
-	outcome := Outcome{
-		MeetingID:     snapshot.Weekend.Meeting.PublicID,
-		SessionCount:  len(snapshot.Weekend.Sessions),
-		EntryCount:    len(snapshot.Entries),
-		ResultCount:   len(snapshot.Results),
-		TransformedAt: transformedAt,
-	}
+	snapshot.SourceFetchedAt = sourceFetchTimes(i.source.RequestRecords())
+	outcome.EntryCount = len(snapshot.Entries)
+	outcome.ResultCount = len(snapshot.Results)
+	outcome.TransformedAt = transformedAt
 	if transformErr != nil {
 		var quarantined *QuarantineError
 		if errors.As(transformErr, &quarantined) {
@@ -128,11 +139,33 @@ func (i *Importer) ImportWeekend(ctx context.Context, target Target) (Outcome, e
 		return outcome, transformErr
 	}
 	if i.publisher != nil {
-		if err := i.publisher.ReplaceWeekend(ctx, snapshot, transformedAt); err != nil {
+		publishedAt, err := i.publisher.ReplaceWeekend(ctx, snapshot)
+		if err != nil {
 			return outcome, fmt.Errorf("publish complete weekend: %w", err)
 		}
+		outcome.PublishedAt = publishedAt
 	}
 	return outcome, nil
+}
+
+func sourceFetchTimes(records []openf1.RequestRecord) SourceFetchTimes {
+	var times SourceFetchTimes
+	for _, record := range records {
+		if record.ResponseStatus < 200 || record.ResponseStatus >= 300 {
+			continue
+		}
+		switch record.Endpoint {
+		case "meetings":
+			times.Meetings = record.FetchedAt
+		case "sessions":
+			times.Sessions = record.FetchedAt
+		case "drivers":
+			times.Drivers = record.FetchedAt
+		case "session_result":
+			times.Results = record.FetchedAt
+		}
+	}
+	return times
 }
 
 // TransformWeekend validates exact reviewed identities and creates deterministic domain records.

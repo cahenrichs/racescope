@@ -92,8 +92,9 @@ func run(ctx context.Context, args []string, output, errorOutput io.Writer, curr
 		}
 		return fmt.Errorf("import season %d meeting %d: %w", options.season, options.meetingKey, err)
 	}
-	fmt.Fprintf(output, "weekend transformed: meeting_id=%s sessions=%d entries=%d results=%d transformed_at=%s\n",
-		outcome.MeetingID, outcome.SessionCount, outcome.EntryCount, outcome.ResultCount, outcome.TransformedAt.Format(time.RFC3339))
+	fmt.Fprintf(output, "weekend published: meeting_id=%s sessions=%d entries=%d results=%d transformed_at=%s published_at=%s\n",
+		outcome.MeetingID, outcome.SessionCount, outcome.EntryCount, outcome.ResultCount,
+		outcome.TransformedAt.Format(time.RFC3339), outcome.PublishedAt.Format(time.RFC3339))
 	return nil
 }
 
@@ -134,11 +135,22 @@ func recordAudit(ctx context.Context, runtime commandRuntime, runID int64, outco
 
 	status := "succeeded"
 	var publishedAt *time.Time
+	var deferredReason *string
 	if importErr == nil {
-		published := outcome.TransformedAt
-		publishedAt = &published
+		if outcome.PublishedAt.IsZero() {
+			status = "failed"
+			auditErrors = append(auditErrors, errors.New("successful import did not report publication time"))
+		} else {
+			published := outcome.PublishedAt
+			publishedAt = &published
+		}
 	} else {
 		status = "failed"
+		if errors.Is(importErr, openf1.ErrLiveDataWindow) {
+			status = "deferred"
+			reason := "OpenF1 session detail is not yet available"
+			deferredReason = &reason
+		}
 		var quarantined *ingest.QuarantineError
 		if errors.As(importErr, &quarantined) {
 			status = "quarantined"
@@ -157,7 +169,7 @@ func recordAudit(ctx context.Context, runtime commandRuntime, runID int64, outco
 	if err := database.FinishImportRun(ctx, runtime.audit, runID, database.ImportRunCompletion{
 		Status: status, FinishedAt: time.Now().UTC(), SessionCount: outcome.SessionCount,
 		EntryCount: outcome.EntryCount, ResultCount: outcome.ResultCount, ErrorCount: outcome.ErrorCount,
-		PublishedAt: publishedAt,
+		DeferredReason: deferredReason, PublishedAt: publishedAt,
 	}); err != nil {
 		auditErrors = append(auditErrors, err)
 	}

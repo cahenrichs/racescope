@@ -55,8 +55,8 @@ CREATE TABLE import_runs (
     deferred_reason TEXT,
     published_at TIMESTAMPTZ,
     CHECK ((status = 'running') = (finished_at IS NULL)),
-    CHECK (published_at IS NULL OR status = 'succeeded'),
-    CHECK (deferred_reason IS NULL OR status = 'deferred')
+    CHECK ((status = 'succeeded') = (published_at IS NOT NULL)),
+    CHECK ((status = 'deferred') = (deferred_reason IS NOT NULL))
 );
 
 CREATE TABLE import_run_requests (

@@ -159,6 +159,8 @@ func (source fakeSource) SessionResults(context.Context, []openf1.Session) ([]op
 	return nil, source.err
 }
 
+func (source fakeSource) RequestRecords() []openf1.RequestRecord { return nil }
+
 func monacoMeetings() []openf1.Meeting {
 	return []openf1.Meeting{{
 		CircuitKey: 22, CircuitShortName: "Monte Carlo", CountryCode: "MON", CountryName: "Monaco",

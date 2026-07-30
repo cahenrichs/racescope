@@ -120,11 +120,17 @@ func TestImporterFetchesDetailsForGrandPrixOnly(t *testing.T) {
 	if outcome.SessionCount != 5 || outcome.EntryCount != 1 || outcome.ResultCount != 1 {
 		t.Fatalf("outcome = %+v", outcome)
 	}
+	if outcome.PublishedAt.IsZero() || !outcome.PublishedAt.Equal(publisher.publishedAt) {
+		t.Fatalf("published outcome = %+v", outcome)
+	}
 	if len(source.driverSessions) != 1 || source.driverSessions[0].SessionName != "Race" || len(source.resultSessions) != 1 || source.resultSessions[0].SessionName != "Race" {
 		t.Fatalf("detail requests used drivers=%+v results=%+v", source.driverSessions, source.resultSessions)
 	}
 	if publisher.calls != 1 || publisher.snapshot.MeetingSourceKey != 1235 || len(publisher.snapshot.Entries) != 1 {
 		t.Fatalf("publisher = %+v", publisher)
+	}
+	if publisher.snapshot.SourceFetchedAt.Meetings.IsZero() || publisher.snapshot.SourceFetchedAt.Results.IsZero() {
+		t.Fatalf("source fetch timestamps = %+v", publisher.snapshot.SourceFetchedAt)
 	}
 }
 
@@ -148,6 +154,42 @@ func TestImporterBlocksQuarantinedWeekend(t *testing.T) {
 	}
 }
 
+func TestImporterRetriesAfterQuarantine(t *testing.T) {
+	t.Parallel()
+
+	one := 1
+	source := &recordingSource{
+		meetings: monacoMeetings(), sessions: monacoSessions(),
+		drivers: []openf1.Driver{raceDriver(16, "Charles", "Leclerc", "Charles LECLERC", "LEC", "Ferrari")},
+		results: []openf1.SessionResult{{DriverNumber: 16, MeetingKey: 1235, SessionKey: 9500, Position: &one}},
+	}
+	publisher := &recordingPublisher{}
+	importer := NewImporter(source, publisher)
+	if _, err := importer.ImportWeekend(context.Background(), Target{Season: 2024, MeetingKey: 1235}); err != nil {
+		t.Fatalf("initial ImportWeekend() error = %v", err)
+	}
+	publishedSnapshot := publisher.snapshot
+
+	source.drivers = []openf1.Driver{raceDriver(99, "Mystery", "Driver", "Mystery DRIVER", "MYS", "Unknown Team")}
+	source.results = nil
+	if _, err := importer.ImportWeekend(context.Background(), Target{Season: 2024, MeetingKey: 1235}); err == nil {
+		t.Fatal("quarantined ImportWeekend() error = nil")
+	}
+	if publisher.calls != 1 || publisher.snapshot.Entries[0].Driver.PublicID != publishedSnapshot.Entries[0].Driver.PublicID {
+		t.Fatalf("quarantine replaced the published snapshot: %+v", publisher)
+	}
+
+	source.drivers = []openf1.Driver{raceDriver(16, "Charles", "Leclerc", "Charles LECLERC", "LEC", "Ferrari")}
+	source.results = []openf1.SessionResult{{DriverNumber: 16, MeetingKey: 1235, SessionKey: 9500, Position: &one}}
+	outcome, err := importer.ImportWeekend(context.Background(), Target{Season: 2024, MeetingKey: 1235})
+	if err != nil {
+		t.Fatalf("retry ImportWeekend() error = %v", err)
+	}
+	if publisher.calls != 2 || outcome.PublishedAt.IsZero() {
+		t.Fatalf("retry outcome/publisher = %+v/%+v", outcome, publisher)
+	}
+}
+
 type recordingSource struct {
 	meetings       []openf1.Meeting
 	sessions       []openf1.Session
@@ -158,15 +200,19 @@ type recordingSource struct {
 }
 
 type recordingPublisher struct {
-	calls    int
-	snapshot Snapshot
-	err      error
+	calls       int
+	snapshot    Snapshot
+	publishedAt time.Time
+	err         error
 }
 
-func (publisher *recordingPublisher) ReplaceWeekend(_ context.Context, snapshot Snapshot, _ time.Time) error {
+func (publisher *recordingPublisher) ReplaceWeekend(_ context.Context, snapshot Snapshot) (time.Time, error) {
 	publisher.calls++
 	publisher.snapshot = snapshot
-	return publisher.err
+	if publisher.publishedAt.IsZero() {
+		publisher.publishedAt = time.Date(2026, time.July, 30, 12, 1, 0, 0, time.UTC)
+	}
+	return publisher.publishedAt, publisher.err
 }
 
 func (source *recordingSource) Meetings(context.Context, int) ([]openf1.Meeting, error) {
@@ -185,6 +231,16 @@ func (source *recordingSource) Drivers(_ context.Context, sessions []openf1.Sess
 func (source *recordingSource) SessionResults(_ context.Context, sessions []openf1.Session) ([]openf1.SessionResult, error) {
 	source.resultSessions = append([]openf1.Session(nil), sessions...)
 	return source.results, nil
+}
+
+func (source *recordingSource) RequestRecords() []openf1.RequestRecord {
+	base := time.Date(2026, time.July, 30, 11, 0, 0, 0, time.UTC)
+	return []openf1.RequestRecord{
+		{Endpoint: "meetings", ResponseStatus: 200, FetchedAt: base},
+		{Endpoint: "sessions", ResponseStatus: 200, FetchedAt: base.Add(time.Minute)},
+		{Endpoint: "drivers", ResponseStatus: 200, FetchedAt: base.Add(2 * time.Minute)},
+		{Endpoint: "session_result", ResponseStatus: 200, FetchedAt: base.Add(3 * time.Minute)},
+	}
 }
 
 func raceDriver(number int, firstName, lastName, fullName, acronym, team string) openf1.Driver {

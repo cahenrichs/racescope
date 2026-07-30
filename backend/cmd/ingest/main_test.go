@@ -4,11 +4,16 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/clint/f1/backend/internal/database"
 	"github.com/clint/f1/backend/internal/ingest"
+	"github.com/clint/f1/backend/internal/openf1"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestParseOptions(t *testing.T) {
@@ -33,6 +38,7 @@ func TestRunReportsSuccessfulOutcome(t *testing.T) {
 			importer: stubImporter{outcome: ingest.Outcome{
 				MeetingID: "meeting_test", SessionCount: 5, EntryCount: 20, ResultCount: 20,
 				TransformedAt: time.Date(2026, time.July, 29, 12, 0, 0, 0, time.UTC),
+				PublishedAt:   time.Date(2026, time.July, 29, 12, 0, 1, 0, time.UTC),
 			}},
 			close: func() { closed = true },
 		}, nil
@@ -110,10 +116,138 @@ func TestRunReportsQuarantineErrors(t *testing.T) {
 	}
 }
 
+func TestRunAuditsDeferredImport(t *testing.T) {
+	t.Parallel()
+
+	audit := &recordingAudit{}
+	fetchedAt := time.Date(2026, time.July, 30, 12, 0, 0, 0, time.UTC)
+	build := func(context.Context) (commandRuntime, error) {
+		return commandRuntime{
+			importer: stubImporter{
+				outcome: ingest.Outcome{SessionCount: 5},
+				err:     fmt.Errorf("fetch Grand Prix entries: %w", openf1.ErrLiveDataWindow),
+			},
+			audit: audit,
+			requestRecords: func() []openf1.RequestRecord {
+				return []openf1.RequestRecord{{
+					Endpoint: "sessions", Parameters: map[string][]string{"meeting_key": {"1235"}},
+					ResponseStatus: 200, FetchedAt: fetchedAt, RecordCount: 5,
+					ResponseSHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+				}}
+			},
+			close: func() {},
+		}, nil
+	}
+
+	err := run(context.Background(), []string{"--season", "2024", "--meeting", "1235"}, &bytes.Buffer{}, &bytes.Buffer{}, 2026, build)
+	if !errors.Is(err, openf1.ErrLiveDataWindow) {
+		t.Fatalf("run() error = %v, want live-window error", err)
+	}
+	completion := audit.completion(t)
+	if completion.status != "deferred" || completion.deferredReason != "OpenF1 session detail is not yet available" || completion.sessionCount != 5 {
+		t.Fatalf("completion = %+v", completion)
+	}
+	if audit.requestCount != 1 {
+		t.Fatalf("request audit count = %d, want 1", audit.requestCount)
+	}
+}
+
+func TestRunFinalizesInterruptedImport(t *testing.T) {
+	t.Parallel()
+
+	audit := &recordingAudit{}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	build := func(context.Context) (commandRuntime, error) {
+		return commandRuntime{importer: stubImporter{err: context.Canceled}, audit: audit, close: func() {}}, nil
+	}
+
+	err := run(ctx, []string{"--season", "2024", "--meeting", "1235"}, &bytes.Buffer{}, &bytes.Buffer{}, 2026, build)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("run() error = %v, want context cancellation", err)
+	}
+	if completion := audit.completion(t); completion.status != "failed" {
+		t.Fatalf("completion = %+v, want failed", completion)
+	}
+}
+
+func TestRunAuditsSuccessfulPublicationTime(t *testing.T) {
+	t.Parallel()
+
+	audit := &recordingAudit{}
+	publishedAt := time.Date(2026, time.July, 30, 12, 5, 0, 0, time.UTC)
+	build := func(context.Context) (commandRuntime, error) {
+		return commandRuntime{
+			importer: stubImporter{outcome: ingest.Outcome{
+				MeetingID: "meeting_test", SessionCount: 5, EntryCount: 20, ResultCount: 20,
+				TransformedAt: publishedAt.Add(-time.Minute), PublishedAt: publishedAt,
+			}},
+			audit: audit, close: func() {},
+		}, nil
+	}
+
+	if err := run(context.Background(), []string{"--season", "2024", "--meeting", "1235"}, &bytes.Buffer{}, &bytes.Buffer{}, 2026, build); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	completion := audit.completion(t)
+	if completion.status != "succeeded" || completion.publishedAt == nil || !completion.publishedAt.Equal(publishedAt) {
+		t.Fatalf("completion = %+v", completion)
+	}
+}
+
 type stubImporter struct {
 	outcome ingest.Outcome
 	err     error
 }
+
+type recordingAudit struct {
+	requestCount int
+	updates      [][]any
+}
+
+type recordedCompletion struct {
+	status         string
+	sessionCount   int
+	deferredReason string
+	publishedAt    *time.Time
+}
+
+func (audit *recordingAudit) QueryRow(context.Context, string, ...any) pgx.Row {
+	return scanRow(func(destinations ...any) error {
+		*destinations[0].(*int64) = 42
+		return nil
+	})
+}
+
+func (audit *recordingAudit) Exec(_ context.Context, query string, args ...any) (pgconn.CommandTag, error) {
+	if strings.Contains(query, "INSERT INTO import_run_requests") {
+		audit.requestCount++
+	}
+	if strings.Contains(query, "UPDATE import_runs") {
+		audit.updates = append(audit.updates, append([]any(nil), args...))
+	}
+	return pgconn.NewCommandTag("UPDATE 1"), nil
+}
+
+func (audit *recordingAudit) completion(t *testing.T) recordedCompletion {
+	t.Helper()
+	if len(audit.updates) != 1 {
+		t.Fatalf("completion updates = %d, want 1", len(audit.updates))
+	}
+	args := audit.updates[0]
+	completion := recordedCompletion{status: args[1].(string), sessionCount: args[3].(int)}
+	if reason := args[7].(*string); reason != nil {
+		completion.deferredReason = *reason
+	}
+	completion.publishedAt = args[8].(*time.Time)
+	return completion
+}
+
+type scanRow func(...any) error
+
+func (row scanRow) Scan(destinations ...any) error { return row(destinations...) }
+
+var _ database.AuditDB = (*recordingAudit)(nil)
 
 func (importer stubImporter) ImportWeekend(context.Context, ingest.Target) (ingest.Outcome, error) {
 	return importer.outcome, importer.err
