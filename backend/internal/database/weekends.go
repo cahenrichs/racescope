@@ -10,7 +10,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var ErrWeekendNotFound = errors.New("weekend not found")
+var (
+	ErrWeekendNotFound = errors.New("weekend not found")
+	ErrSessionNotFound = errors.New("session not found")
+)
 
 type Querier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
@@ -113,6 +116,15 @@ func SessionClassification(ctx context.Context, db Querier, sessionPublicID doma
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("read session classification %q: %w", sessionPublicID, err)
+	}
+	if len(results) == 0 {
+		var exists bool
+		if err := db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM sessions WHERE public_id = $1)`, sessionPublicID.String()).Scan(&exists); err != nil {
+			return nil, fmt.Errorf("check session %q: %w", sessionPublicID, err)
+		}
+		if !exists {
+			return nil, ErrSessionNotFound
+		}
 	}
 	return results, nil
 }

@@ -136,6 +136,22 @@ func TestCompletedWeekendRepresentativeQueries(t *testing.T) {
 	if results[4].NumberOfLaps != nil || results[5].NumberOfLaps != nil {
 		t.Errorf("unknown and missing laps = %v, %v; want nil, nil", results[4].NumberOfLaps, results[5].NumberOfLaps)
 	}
+
+	emptySessionID := testPublicID(t, domain.EntitySession, "2025-monaco-grand-prix:practice")
+	var meetingPK int64
+	mustScanID(t, pool.QueryRow(ctx, `SELECT id FROM meetings WHERE public_id = $1`, seed.meetingID), &meetingPK)
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO sessions (public_id, source_key, meeting_id, name, type, date_start, date_end, is_cancelled, source_fetched_at)
+		VALUES ($1, 99999, $2, 'Practice', 'Practice', $3, $3, false, $3)`, emptySessionID, meetingPK, time.Now().UTC()); err != nil {
+		t.Fatalf("insert session with no entries: %v", err)
+	}
+	empty, err := SessionClassification(ctx, pool, emptySessionID)
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("SessionClassification() known empty session = %+v, error %v", empty, err)
+	}
+	if _, err := SessionClassification(ctx, pool, domain.PublicID("session_missing")); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("SessionClassification() unknown session error = %v, want ErrSessionNotFound", err)
+	}
 }
 
 func TestPublicIDsReproduceAcrossDatabaseRebuilds(t *testing.T) {

@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 type pingFunc func(context.Context) error
@@ -15,8 +17,28 @@ func (fn pingFunc) Ping(ctx context.Context) error {
 	return fn(ctx)
 }
 
+type testDatabase struct {
+	ping pingFunc
+}
+
+func (db testDatabase) Ping(ctx context.Context) error {
+	return db.ping(ctx)
+}
+
+func (testDatabase) Query(context.Context, string, ...any) (pgx.Rows, error) {
+	panic("unexpected database query")
+}
+
+func (testDatabase) QueryRow(context.Context, string, ...any) pgx.Row {
+	panic("unexpected database query")
+}
+
+func healthTestRouter(ping pingFunc) http.Handler {
+	return NewRouter(testDatabase{ping: ping})
+}
+
 func TestHealthDoesNotPingDatabase(t *testing.T) {
-	router := NewRouter(pingFunc(func(context.Context) error {
+	router := healthTestRouter(pingFunc(func(context.Context) error {
 		t.Fatal("database pinged by liveness check")
 		return nil
 	}))
@@ -48,7 +70,7 @@ func TestReady(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			response := httptest.NewRecorder()
-			NewRouter(test.ping).ServeHTTP(
+			healthTestRouter(test.ping).ServeHTTP(
 				response,
 				httptest.NewRequest(http.MethodGet, "/ready", nil),
 			)
@@ -60,7 +82,7 @@ func TestReady(t *testing.T) {
 
 func TestReadyBoundsDatabasePing(t *testing.T) {
 	response := httptest.NewRecorder()
-	NewRouter(pingFunc(func(ctx context.Context) error {
+	healthTestRouter(pingFunc(func(ctx context.Context) error {
 		deadline, ok := ctx.Deadline()
 		if !ok {
 			t.Fatal("database ping context has no deadline")
@@ -79,7 +101,7 @@ func TestHealthRoutesRejectUnsupportedMethods(t *testing.T) {
 	for _, path := range []string{"/health", "/ready"} {
 		t.Run(path, func(t *testing.T) {
 			response := httptest.NewRecorder()
-			NewRouter(pingFunc(func(context.Context) error {
+			healthTestRouter(pingFunc(func(context.Context) error {
 				t.Fatal("database pinged for unsupported method")
 				return nil
 			})).ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, nil))
