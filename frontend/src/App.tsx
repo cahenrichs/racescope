@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { getDashboard } from './api/client'
 import type { DashboardResponse } from './api/contracts'
 
@@ -127,9 +128,9 @@ export default function App({ loadDashboard = getDashboard }: AppProps) {
                       {race.circuit.location} / {race.circuit.countryCode}
                     </p>
                     <h3>
-                      <a href={`/races/${encodeURIComponent(race.id)}`}>
+                      <Link to={`/races/${encodeURIComponent(race.id)}`}>
                         {race.name}
-                      </a>
+                      </Link>
                     </h3>
                     <p className="race-card__official-name">{race.officialName}</p>
                     <dl className="race-card__facts">

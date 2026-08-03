@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import App from './App'
 import type { DashboardResponse, RaceSummary } from './api/contracts'
@@ -43,7 +44,7 @@ describe('App', () => {
       () => new Promise<DashboardResponse>(() => undefined),
     )
 
-    render(<App loadDashboard={loadDashboard} />)
+    renderApp(loadDashboard)
 
     expect(screen.getByRole('status')).toHaveAttribute('aria-busy', 'true')
     expect(screen.getByText('Checking the timing screens.')).toBeInTheDocument()
@@ -52,7 +53,7 @@ describe('App', () => {
   it('renders every race with coverage dates and deterministic links', async () => {
     const loadDashboard = vi.fn(async () => dashboard)
 
-    render(<App loadDashboard={loadDashboard} />)
+    renderApp(loadDashboard)
 
     const monacoLink = await screen.findByRole('link', {
       name: 'Monaco Grand Prix',
@@ -72,7 +73,7 @@ describe('App', () => {
   it('renders the empty dashboard state', async () => {
     const loadDashboard = vi.fn(async () => ({ races: [], coverage: null }))
 
-    render(<App loadDashboard={loadDashboard} />)
+    renderApp(loadDashboard)
 
     expect(
       await screen.findByText('No race weekends are published yet.'),
@@ -84,7 +85,7 @@ describe('App', () => {
       throw new Error('The dashboard could not be reached.')
     })
 
-    render(<App loadDashboard={loadDashboard} />)
+    renderApp(loadDashboard)
 
     expect(
       await screen.findByText('The race archive is unavailable.'),
@@ -95,3 +96,11 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled()
   })
 })
+
+function renderApp(loadDashboard: NonNullable<Parameters<typeof App>[0]['loadDashboard']>) {
+  return render(
+    <MemoryRouter>
+      <App loadDashboard={loadDashboard} />
+    </MemoryRouter>,
+  )
+}
