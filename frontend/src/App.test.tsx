@@ -1,44 +1,96 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import App from './App'
-import type { ReadinessResponse } from './api/client'
+import type { DashboardResponse, RaceSummary } from './api/contracts'
+
+const monaco: RaceSummary = {
+  id: 'meeting_2024-monaco-grand-prix',
+  season: 2024,
+  name: 'Monaco Grand Prix',
+  officialName: 'FORMULA 1 GRAND PRIX DE MONACO 2024',
+  circuit: {
+    id: 'circuit_circuit-de-monaco',
+    name: 'Circuit de Monaco',
+    countryCode: 'MON',
+    countryName: 'Monaco',
+    location: 'Monte Carlo',
+  },
+  startAt: '2024-05-24T11:30:00Z',
+  endAt: '2024-05-26T15:00:00Z',
+  coverage: {
+    status: 'complete',
+    sourceFetchedAt: '2024-05-27T12:00:00Z',
+    publishedAt: '2026-07-31T12:00:00Z',
+  },
+}
+
+const dashboard: DashboardResponse = {
+  races: [
+    monaco,
+    {
+      ...monaco,
+      id: 'meeting_2024-british-grand-prix',
+      name: 'British Grand Prix',
+      officialName: 'FORMULA 1 BRITISH GRAND PRIX 2024',
+    },
+  ],
+  coverage: monaco.coverage,
+}
 
 describe('App', () => {
-  it('renders an accessible loading state while readiness is pending', () => {
-    const loadReadiness = vi.fn(
-      () => new Promise<ReadinessResponse>(() => undefined),
+  it('renders an accessible loading state while the dashboard is pending', () => {
+    const loadDashboard = vi.fn(
+      () => new Promise<DashboardResponse>(() => undefined),
     )
 
-    render(<App loadReadiness={loadReadiness} />)
+    render(<App loadDashboard={loadDashboard} />)
 
     expect(screen.getByRole('status')).toHaveAttribute('aria-busy', 'true')
-    expect(screen.getByText('Checking the pit wall.')).toBeInTheDocument()
+    expect(screen.getByText('Checking the timing screens.')).toBeInTheDocument()
   })
 
-  it('renders the ready state when the API and database are available', async () => {
-    const loadReadiness = vi.fn(async () => ({ status: 'ok' as const }))
+  it('renders every race with coverage dates and deterministic links', async () => {
+    const loadDashboard = vi.fn(async () => dashboard)
 
-    render(<App loadReadiness={loadReadiness} />)
+    render(<App loadDashboard={loadDashboard} />)
 
-    expect(await screen.findByText('Systems are ready.')).toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveAttribute('aria-busy', 'false')
+    const monacoLink = await screen.findByRole('link', {
+      name: 'Monaco Grand Prix',
+    })
+    expect(monacoLink).toHaveAttribute(
+      'href',
+      '/races/meeting_2024-monaco-grand-prix',
+    )
     expect(
-      screen.getByText('The API is running and connected to PostgreSQL.'),
+      screen.getByRole('link', { name: 'British Grand Prix' }),
+    ).toHaveAttribute('href', '/races/meeting_2024-british-grand-prix')
+    expect(screen.getAllByText('Complete')).toHaveLength(2)
+    expect(screen.getAllByText(/Source updated/)).toHaveLength(2)
+    expect(screen.getAllByText(/^Published /)).toHaveLength(2)
+  })
+
+  it('renders the empty dashboard state', async () => {
+    const loadDashboard = vi.fn(async () => ({ races: [], coverage: null }))
+
+    render(<App loadDashboard={loadDashboard} />)
+
+    expect(
+      await screen.findByText('No race weekends are published yet.'),
     ).toBeInTheDocument()
   })
 
-  it('renders an actionable unavailable state when readiness fails', async () => {
-    const loadReadiness = vi.fn(async () => {
-      throw new Error('The API could not be reached.')
+  it('renders an actionable error when the dashboard fails', async () => {
+    const loadDashboard = vi.fn(async () => {
+      throw new Error('The dashboard could not be reached.')
     })
 
-    render(<App loadReadiness={loadReadiness} />)
+    render(<App loadDashboard={loadDashboard} />)
 
     expect(
-      await screen.findByText('RaceScope is unavailable.'),
+      await screen.findByText('The race archive is unavailable.'),
     ).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent(
-      'The API could not be reached.',
+      'The dashboard could not be reached.',
     )
     expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled()
   })
