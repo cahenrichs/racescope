@@ -2,28 +2,8 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import App from './App'
-import type { DashboardResponse, RaceSummary } from './api/contracts'
-
-const monaco: RaceSummary = {
-  id: 'meeting_2024-monaco-grand-prix',
-  season: 2024,
-  name: 'Monaco Grand Prix',
-  officialName: 'FORMULA 1 GRAND PRIX DE MONACO 2024',
-  circuit: {
-    id: 'circuit_circuit-de-monaco',
-    name: 'Circuit de Monaco',
-    countryCode: 'MON',
-    countryName: 'Monaco',
-    location: 'Monte Carlo',
-  },
-  startAt: '2024-05-24T11:30:00Z',
-  endAt: '2024-05-26T15:00:00Z',
-  coverage: {
-    status: 'complete',
-    sourceFetchedAt: '2024-05-27T12:00:00Z',
-    publishedAt: '2026-07-31T12:00:00Z',
-  },
-}
+import type { DashboardResponse } from './api/contracts'
+import { monaco } from './test/fixtures'
 
 const dashboard: DashboardResponse = {
   races: [
