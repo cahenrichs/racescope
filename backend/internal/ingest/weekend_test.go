@@ -15,7 +15,7 @@ import (
 func TestTransformWeekend(t *testing.T) {
 	t.Parallel()
 
-	snapshot, err := TransformWeekend(Target{Season: 2024, MeetingKey: 1235}, monacoMeetings(), monacoSessions())
+	snapshot, err := TransformWeekend(Target{Season: 2024, MeetingKey: 1236}, monacoMeetings(), monacoSessions())
 	if err != nil {
 		t.Fatalf("TransformWeekend() error = %v", err)
 	}
@@ -51,7 +51,7 @@ func TestTransformWeekend(t *testing.T) {
 func TestTransformWeekendIDsIgnoreSourceKeysAndOrder(t *testing.T) {
 	t.Parallel()
 
-	first, err := TransformWeekend(Target{Season: 2024, MeetingKey: 1235}, monacoMeetings(), monacoSessions())
+	first, err := TransformWeekend(Target{Season: 2024, MeetingKey: 1236}, monacoMeetings(), monacoSessions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestTransformWeekendIDsIgnoreSourceKeysAndOrder(t *testing.T) {
 	for index := range sessions {
 		sessions[index].SessionKey += 10000
 	}
-	second, err := TransformWeekend(Target{Season: 2024, MeetingKey: 1235}, monacoMeetings(), sessions)
+	second, err := TransformWeekend(Target{Season: 2024, MeetingKey: 1236}, monacoMeetings(), sessions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestTransformWeekendRejectsUnreviewedRecords(t *testing.T) {
 	}{
 		{name: "unknown mapping", change: func(m []openf1.Meeting, s []openf1.Session) ([]openf1.Meeting, []openf1.Session) { return m, s }, want: "no reviewed weekend identity"},
 		{name: "meeting mismatch", change: func(m []openf1.Meeting, s []openf1.Session) ([]openf1.Meeting, []openf1.Session) {
-			m[0].Location = "Monaco"
+			m[0].Location = "Monte Carlo"
 			return m, s
 		}, want: "does not match"},
 		{name: "missing session", change: func(m []openf1.Meeting, s []openf1.Session) ([]openf1.Meeting, []openf1.Session) { return m, s[:4] }, want: "expected 5 reviewed sessions"},
@@ -115,7 +115,7 @@ func TestTransformWeekendRejectsUnreviewedRecords(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			meetings, sessions := test.change(monacoMeetings(), monacoSessions())
-			target := Target{Season: 2024, MeetingKey: 1235}
+			target := Target{Season: 2024, MeetingKey: 1236}
 			if test.name == "unknown mapping" {
 				target.MeetingKey = 9999
 			}
@@ -131,7 +131,7 @@ func TestImporterReportsFetchFailure(t *testing.T) {
 	t.Parallel()
 
 	importer := NewImporter(fakeSource{err: errors.New("source unavailable")})
-	_, err := importer.ImportWeekend(context.Background(), Target{Season: 2024, MeetingKey: 1235})
+	_, err := importer.ImportWeekend(context.Background(), Target{Season: 2024, MeetingKey: 1236})
 	if err == nil || !strings.Contains(err.Error(), "fetch meetings") {
 		t.Fatalf("ImportWeekend() error = %v", err)
 	}
@@ -166,7 +166,7 @@ func monacoMeetings() []openf1.Meeting {
 		CircuitKey: 22, CircuitShortName: "Monte Carlo", CountryCode: "MON", CountryName: "Monaco",
 		DateStart: time.Date(2024, time.May, 24, 11, 30, 0, 0, time.UTC),
 		DateEnd:   time.Date(2024, time.May, 26, 15, 0, 0, 0, time.UTC),
-		Location:  "Monte Carlo", MeetingKey: 1235, MeetingName: "Monaco Grand Prix",
+		Location:  "Monaco", MeetingKey: 1236, MeetingName: "Monaco Grand Prix",
 		MeetingOfficialName: "FORMULA 1 GRAND PRIX DE MONACO 2024", Year: 2024,
 	}}
 }
@@ -182,5 +182,5 @@ func monacoSessions() []openf1.Session {
 }
 
 func monacoSession(key int, name, sessionType string, start, end time.Time) openf1.Session {
-	return openf1.Session{CircuitKey: 22, DateStart: start, DateEnd: end, MeetingKey: 1235, SessionKey: key, SessionName: name, SessionType: sessionType, Year: 2024}
+	return openf1.Session{CircuitKey: 22, DateStart: start, DateEnd: end, MeetingKey: 1236, SessionKey: key, SessionName: name, SessionType: sessionType, Year: 2024}
 }

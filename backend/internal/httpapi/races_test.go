@@ -146,7 +146,7 @@ func assertErrorContract(t *testing.T, response *httptest.ResponseRecorder, stat
 
 func assertNoPrivateKeys(t *testing.T, body string) {
 	t.Helper()
-	for _, privateValue := range []string{`"sourceKey"`, `"meetingKey"`, `"databaseId"`, "1235", "9496", "9500"} {
+	for _, privateValue := range []string{`"sourceKey"`, `"meetingKey"`, `"databaseId"`, "1236", "1237", "9496", "9500"} {
 		if strings.Contains(body, privateValue) {
 			t.Errorf("response leaked private value %q: %s", privateValue, body)
 		}
@@ -182,12 +182,12 @@ func seedRaceAPI(t *testing.T, pool *pgxpool.Pool) apiSeed {
 	mustScanAPIID(t, pool.QueryRow(ctx, `
 		INSERT INTO meetings (public_id, source_key, season_id, circuit_id, name, official_name, date_start, date_end,
 			is_cancelled, source_fetched_at, published_at)
-		VALUES ($1, 1235, $2, $3, 'Monaco Grand Prix', 'FORMULA 1 GRAND PRIX DE MONACO 2024', $4, $5, false, $6, $7)
+		VALUES ($1, 1236, $2, $3, 'Monaco Grand Prix', 'FORMULA 1 GRAND PRIX DE MONACO 2024', $4, $5, false, $6, $7)
 		RETURNING id`, raceID, seasonPK, circuitPK, time.Date(2024, 5, 24, 11, 30, 0, 0, time.UTC), time.Date(2024, 5, 26, 15, 0, 0, 0, time.UTC), fetchedAt, publishedAt), &racePK)
 	mustScanAPIID(t, pool.QueryRow(ctx, `
 		INSERT INTO meetings (public_id, source_key, season_id, circuit_id, name, official_name, date_start, date_end,
 			is_cancelled, source_fetched_at, published_at)
-		VALUES ($1, 1236, $2, $3, 'Incomplete Grand Prix', 'INCOMPLETE GRAND PRIX', $4, $5, false, $6, $7)
+		VALUES ($1, 1237, $2, $3, 'Incomplete Grand Prix', 'INCOMPLETE GRAND PRIX', $4, $5, false, $6, $7)
 		RETURNING id`, incompleteID, seasonPK, circuitPK, time.Date(2024, 5, 1, 10, 0, 0, 0, time.UTC), time.Date(2024, 5, 2, 10, 0, 0, 0, time.UTC), fetchedAt, publishedAt), &incompletePK)
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO sessions (public_id, source_key, meeting_id, name, type, date_start, date_end, is_cancelled, source_fetched_at)

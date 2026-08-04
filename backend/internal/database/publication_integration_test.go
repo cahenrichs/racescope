@@ -98,12 +98,12 @@ func TestFailedReplacementRollsBackAndPreservesAuditRows(t *testing.T) {
 		t.Fatalf("initial ReplaceWeekend() error = %v", err)
 	}
 
-	runID, err := CreateImportRun(ctx, pool, 2024, 1235, publishedAt.Add(time.Hour))
+	runID, err := CreateImportRun(ctx, pool, 2024, 1236, publishedAt.Add(time.Hour))
 	if err != nil {
 		t.Fatalf("CreateImportRun() error = %v", err)
 	}
 	if err := RecordImportRunRequest(ctx, pool, runID, ImportRunRequest{
-		Endpoint: "sessions", Parameters: map[string][]string{"meeting_key": {"1235"}}, ResponseStatus: 200,
+		Endpoint: "sessions", Parameters: map[string][]string{"meeting_key": {"1236"}}, ResponseStatus: 200,
 		FetchedAt: publishedAt.Add(time.Hour), RecordCount: 2,
 		ResponseSHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 	}); err != nil {
@@ -188,7 +188,7 @@ func publicationSnapshot(t *testing.T) ingest.Snapshot {
 	}
 	return ingest.Snapshot{
 		Weekend:          domain.Weekend{Meeting: meeting, Sessions: []domain.Session{practice, race}, GrandPrixSessionID: race.PublicID},
-		MeetingSourceKey: 1235, CircuitSourceKey: 22,
+		MeetingSourceKey: 1236, CircuitSourceKey: 22,
 		SessionSourceKeys: map[domain.PublicID]int{practice.PublicID: 9496, race.PublicID: 9500},
 		Drivers:           []domain.Driver{driver}, Constructors: []domain.ConstructorEntrant{constructor},
 		Entries: []domain.SessionEntry{entry}, Results: []domain.SessionResult{result},

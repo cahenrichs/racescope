@@ -3,16 +3,16 @@ package identity
 import "time"
 
 var weekendMappings = map[weekendLookup]WeekendMapping{
-	{season: 2024, meetingKey: 1235}: {
+	{season: 2024, meetingKey: 1236}: {
 		Season:              2024,
-		SourceMeetingKey:    1235,
+		SourceMeetingKey:    1236,
 		MeetingCanonicalKey: "2024-monaco-grand-prix",
 		CircuitCanonicalKey: "circuit-de-monaco",
 		CircuitKey:          22,
 		CircuitShortName:    "Monte Carlo",
 		CountryCode:         "MON",
 		CountryName:         "Monaco",
-		Location:            "Monte Carlo",
+		Location:            "Monaco",
 		MeetingName:         "Monaco Grand Prix",
 		MeetingOfficialName: "FORMULA 1 GRAND PRIX DE MONACO 2024",
 		DateStart:           time.Date(2024, time.May, 24, 11, 30, 0, 0, time.UTC),

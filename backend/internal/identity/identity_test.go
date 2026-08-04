@@ -5,12 +5,12 @@ import "testing"
 func TestMonaco2024IdentityMappings(t *testing.T) {
 	t.Parallel()
 
-	weekend, ok := Weekend(2024, 1235)
+	weekend, ok := Weekend(2024, 1236)
 	if !ok {
-		t.Fatal("Weekend(2024, 1235) was not found")
+		t.Fatal("Weekend(2024, 1236) was not found")
 	}
 	if weekend.MeetingCanonicalKey != "2024-monaco-grand-prix" || weekend.CircuitCanonicalKey != "circuit-de-monaco" {
-		t.Fatalf("Weekend(2024, 1235) = %+v", weekend)
+		t.Fatalf("Weekend(2024, 1236) = %+v", weekend)
 	}
 	if len(weekend.Sessions) != 5 {
 		t.Fatalf("session mappings = %d, want 5", len(weekend.Sessions))
@@ -42,7 +42,7 @@ func TestIdentityLookupsAreExact(t *testing.T) {
 	if _, ok := Constructor(2024, "ferrari"); ok {
 		t.Fatal("Constructor accepted a case-insensitive source name")
 	}
-	if _, ok := Weekend(2024, 1236); ok {
+	if _, ok := Weekend(2024, 9999); ok {
 		t.Fatal("Weekend accepted an unreviewed source meeting key")
 	}
 }

@@ -44,7 +44,7 @@ func TestRunReportsSuccessfulOutcome(t *testing.T) {
 		}, nil
 	}
 
-	err := run(context.Background(), []string{"--season", "2024", "--meeting", "1235"}, &output, &bytes.Buffer{}, 2026, build)
+	err := run(context.Background(), []string{"--season", "2024", "--meeting", "1236"}, &output, &bytes.Buffer{}, 2026, build)
 	if err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
@@ -84,7 +84,7 @@ func TestRunReturnsSetupAndImportFailures(t *testing.T) {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			err := run(context.Background(), []string{"--season", "2024", "--meeting", "1235"}, &bytes.Buffer{}, &bytes.Buffer{}, 2026, test.build)
+			err := run(context.Background(), []string{"--season", "2024", "--meeting", "1236"}, &bytes.Buffer{}, &bytes.Buffer{}, 2026, test.build)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("run() error = %v, want containing %q", err, test.want)
 			}
@@ -107,7 +107,7 @@ func TestRunReportsQuarantineErrors(t *testing.T) {
 		}, nil
 	}
 
-	err := run(context.Background(), []string{"--season", "2024", "--meeting", "1235"}, &bytes.Buffer{}, &errorOutput, 2026, build)
+	err := run(context.Background(), []string{"--season", "2024", "--meeting", "1236"}, &bytes.Buffer{}, &errorOutput, 2026, build)
 	if !errors.Is(err, quarantine) {
 		t.Fatalf("run() error = %v, want quarantine", err)
 	}
@@ -130,7 +130,7 @@ func TestRunAuditsDeferredImport(t *testing.T) {
 			audit: audit,
 			requestRecords: func() []openf1.RequestRecord {
 				return []openf1.RequestRecord{{
-					Endpoint: "sessions", Parameters: map[string][]string{"meeting_key": {"1235"}},
+					Endpoint: "sessions", Parameters: map[string][]string{"meeting_key": {"1236"}},
 					ResponseStatus: 200, FetchedAt: fetchedAt, RecordCount: 5,
 					ResponseSHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 				}}
@@ -139,7 +139,7 @@ func TestRunAuditsDeferredImport(t *testing.T) {
 		}, nil
 	}
 
-	err := run(context.Background(), []string{"--season", "2024", "--meeting", "1235"}, &bytes.Buffer{}, &bytes.Buffer{}, 2026, build)
+	err := run(context.Background(), []string{"--season", "2024", "--meeting", "1236"}, &bytes.Buffer{}, &bytes.Buffer{}, 2026, build)
 	if !errors.Is(err, openf1.ErrLiveDataWindow) {
 		t.Fatalf("run() error = %v, want live-window error", err)
 	}
@@ -162,7 +162,7 @@ func TestRunFinalizesInterruptedImport(t *testing.T) {
 		return commandRuntime{importer: stubImporter{err: context.Canceled}, audit: audit, close: func() {}}, nil
 	}
 
-	err := run(ctx, []string{"--season", "2024", "--meeting", "1235"}, &bytes.Buffer{}, &bytes.Buffer{}, 2026, build)
+	err := run(ctx, []string{"--season", "2024", "--meeting", "1236"}, &bytes.Buffer{}, &bytes.Buffer{}, 2026, build)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("run() error = %v, want context cancellation", err)
 	}
@@ -186,7 +186,7 @@ func TestRunAuditsSuccessfulPublicationTime(t *testing.T) {
 		}, nil
 	}
 
-	if err := run(context.Background(), []string{"--season", "2024", "--meeting", "1235"}, &bytes.Buffer{}, &bytes.Buffer{}, 2026, build); err != nil {
+	if err := run(context.Background(), []string{"--season", "2024", "--meeting", "1236"}, &bytes.Buffer{}, &bytes.Buffer{}, 2026, build); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
 	completion := audit.completion(t)

@@ -44,7 +44,7 @@ func TestClientFetchesCompletedWeekendResources(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Meetings() error = %v", err)
 	}
-	if len(meetings) != 1 || meetings[0].MeetingKey != 1235 || meetings[0].MeetingName != "Monaco Grand Prix" {
+	if len(meetings) != 1 || meetings[0].MeetingKey != 1236 || meetings[0].MeetingName != "Monaco Grand Prix" {
 		t.Fatalf("Meetings() = %#v", meetings)
 	}
 
@@ -192,7 +192,7 @@ func TestClientRateLimitsAllEndpointsCentrally(t *testing.T) {
 	if _, err := client.Meetings(context.Background(), 2024); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Sessions(context.Background(), 1235); err != nil {
+	if _, err := client.Sessions(context.Background(), 1236); err != nil {
 		t.Fatal(err)
 	}
 	if elapsed := requestedAt[1].Sub(requestedAt[0]); elapsed < 12*time.Millisecond {

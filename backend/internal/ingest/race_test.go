@@ -25,14 +25,14 @@ func TestTransformRacePreservesClassificationAndValueStates(t *testing.T) {
 	zero := 0.0
 	one := 1
 	results := []openf1.SessionResult{
-		{DriverNumber: 16, MeetingKey: 1235, SessionKey: 9500, Position: &one, Duration: openf1.ResultValue{Present: true, Number: &zero}, GapToLeader: openf1.ResultValue{Present: true, Number: &zero}},
-		{DriverNumber: 81, MeetingKey: 1235, SessionKey: 9500, DNS: true, Duration: openf1.ResultValue{Present: true}, GapToLeader: openf1.ResultValue{Present: true}},
-		{DriverNumber: 1, MeetingKey: 1235, SessionKey: 9500, DNF: true},
-		{DriverNumber: 2, MeetingKey: 1235, SessionKey: 9500, DSQ: true},
-		{DriverNumber: 3, MeetingKey: 1235, SessionKey: 9500},
+		{DriverNumber: 16, MeetingKey: 1236, SessionKey: 9500, Position: &one, Duration: openf1.ResultValue{Present: true, Number: &zero}, GapToLeader: openf1.ResultValue{Present: true, Number: &zero}},
+		{DriverNumber: 81, MeetingKey: 1236, SessionKey: 9500, DNS: true, Duration: openf1.ResultValue{Present: true}, GapToLeader: openf1.ResultValue{Present: true}},
+		{DriverNumber: 1, MeetingKey: 1236, SessionKey: 9500, DNF: true},
+		{DriverNumber: 2, MeetingKey: 1236, SessionKey: 9500, DSQ: true},
+		{DriverNumber: 3, MeetingKey: 1236, SessionKey: 9500},
 	}
 
-	data, err := TransformRace(Target{Season: 2024, MeetingKey: 1235}, testSeason(), testRaceSession(), 9500, drivers, results)
+	data, err := TransformRace(Target{Season: 2024, MeetingKey: 1236}, testSeason(), testRaceSession(), 9500, drivers, results)
 	var quarantined *QuarantineError
 	if !errors.As(err, &quarantined) || len(quarantined.Errors) != 1 || quarantined.Errors[0].Code != "missing_result" {
 		t.Fatalf("TransformRace() error = %+v, want one missing_result quarantine", err)
@@ -78,8 +78,8 @@ func TestTransformRaceQuarantinesAllIdentityMismatches(t *testing.T) {
 		raceDriver(81, "Oscar", "Piastri", "Oscar PIASTRI", "BAD", "Unknown Constructor"),
 	}
 	one := 1
-	data, err := TransformRace(Target{Season: 2024, MeetingKey: 1235}, testSeason(), testRaceSession(), 9500, drivers,
-		[]openf1.SessionResult{{DriverNumber: 16, MeetingKey: 1235, SessionKey: 9500, Position: &one}})
+	data, err := TransformRace(Target{Season: 2024, MeetingKey: 1236}, testSeason(), testRaceSession(), 9500, drivers,
+		[]openf1.SessionResult{{DriverNumber: 16, MeetingKey: 1236, SessionKey: 9500, Position: &one}})
 	var quarantined *QuarantineError
 	if !errors.As(err, &quarantined) {
 		t.Fatalf("TransformRace() error = %v, want QuarantineError", err)
@@ -109,11 +109,11 @@ func TestImporterFetchesDetailsForGrandPrixOnly(t *testing.T) {
 	source := &recordingSource{
 		meetings: monacoMeetings(), sessions: monacoSessions(),
 		drivers: []openf1.Driver{raceDriver(16, "Charles", "Leclerc", "Charles LECLERC", "LEC", "Ferrari")},
-		results: []openf1.SessionResult{{DriverNumber: 16, MeetingKey: 1235, SessionKey: 9500, Position: &one}},
+		results: []openf1.SessionResult{{DriverNumber: 16, MeetingKey: 1236, SessionKey: 9500, Position: &one}},
 	}
 	publisher := &recordingPublisher{}
 	importer := NewImporter(source, publisher)
-	outcome, err := importer.ImportWeekend(context.Background(), Target{Season: 2024, MeetingKey: 1235})
+	outcome, err := importer.ImportWeekend(context.Background(), Target{Season: 2024, MeetingKey: 1236})
 	if err != nil {
 		t.Fatalf("ImportWeekend() error = %v", err)
 	}
@@ -126,7 +126,7 @@ func TestImporterFetchesDetailsForGrandPrixOnly(t *testing.T) {
 	if len(source.driverSessions) != 1 || source.driverSessions[0].SessionName != "Race" || len(source.resultSessions) != 1 || source.resultSessions[0].SessionName != "Race" {
 		t.Fatalf("detail requests used drivers=%+v results=%+v", source.driverSessions, source.resultSessions)
 	}
-	if publisher.calls != 1 || publisher.snapshot.MeetingSourceKey != 1235 || len(publisher.snapshot.Entries) != 1 {
+	if publisher.calls != 1 || publisher.snapshot.MeetingSourceKey != 1236 || len(publisher.snapshot.Entries) != 1 {
 		t.Fatalf("publisher = %+v", publisher)
 	}
 	if publisher.snapshot.SourceFetchedAt.Meetings.IsZero() || publisher.snapshot.SourceFetchedAt.Results.IsZero() {
@@ -144,7 +144,7 @@ func TestImporterBlocksQuarantinedWeekend(t *testing.T) {
 			raceDriver(98, "Second", "Unknown", "Second UNKNOWN", "TWO", "Unknown Two"),
 		},
 	}
-	outcome, err := NewImporter(source).ImportWeekend(context.Background(), Target{Season: 2024, MeetingKey: 1235})
+	outcome, err := NewImporter(source).ImportWeekend(context.Background(), Target{Season: 2024, MeetingKey: 1236})
 	var quarantined *QuarantineError
 	if !errors.As(err, &quarantined) {
 		t.Fatalf("ImportWeekend() error = %v, want quarantine", err)
@@ -161,18 +161,18 @@ func TestImporterRetriesAfterQuarantine(t *testing.T) {
 	source := &recordingSource{
 		meetings: monacoMeetings(), sessions: monacoSessions(),
 		drivers: []openf1.Driver{raceDriver(16, "Charles", "Leclerc", "Charles LECLERC", "LEC", "Ferrari")},
-		results: []openf1.SessionResult{{DriverNumber: 16, MeetingKey: 1235, SessionKey: 9500, Position: &one}},
+		results: []openf1.SessionResult{{DriverNumber: 16, MeetingKey: 1236, SessionKey: 9500, Position: &one}},
 	}
 	publisher := &recordingPublisher{}
 	importer := NewImporter(source, publisher)
-	if _, err := importer.ImportWeekend(context.Background(), Target{Season: 2024, MeetingKey: 1235}); err != nil {
+	if _, err := importer.ImportWeekend(context.Background(), Target{Season: 2024, MeetingKey: 1236}); err != nil {
 		t.Fatalf("initial ImportWeekend() error = %v", err)
 	}
 	publishedSnapshot := publisher.snapshot
 
 	source.drivers = []openf1.Driver{raceDriver(99, "Mystery", "Driver", "Mystery DRIVER", "MYS", "Unknown Team")}
 	source.results = nil
-	if _, err := importer.ImportWeekend(context.Background(), Target{Season: 2024, MeetingKey: 1235}); err == nil {
+	if _, err := importer.ImportWeekend(context.Background(), Target{Season: 2024, MeetingKey: 1236}); err == nil {
 		t.Fatal("quarantined ImportWeekend() error = nil")
 	}
 	if publisher.calls != 1 || publisher.snapshot.Entries[0].Driver.PublicID != publishedSnapshot.Entries[0].Driver.PublicID {
@@ -180,8 +180,8 @@ func TestImporterRetriesAfterQuarantine(t *testing.T) {
 	}
 
 	source.drivers = []openf1.Driver{raceDriver(16, "Charles", "Leclerc", "Charles LECLERC", "LEC", "Ferrari")}
-	source.results = []openf1.SessionResult{{DriverNumber: 16, MeetingKey: 1235, SessionKey: 9500, Position: &one}}
-	outcome, err := importer.ImportWeekend(context.Background(), Target{Season: 2024, MeetingKey: 1235})
+	source.results = []openf1.SessionResult{{DriverNumber: 16, MeetingKey: 1236, SessionKey: 9500, Position: &one}}
+	outcome, err := importer.ImportWeekend(context.Background(), Target{Season: 2024, MeetingKey: 1236})
 	if err != nil {
 		t.Fatalf("retry ImportWeekend() error = %v", err)
 	}
@@ -246,7 +246,7 @@ func (source *recordingSource) RequestRecords() []openf1.RequestRecord {
 func raceDriver(number int, firstName, lastName, fullName, acronym, team string) openf1.Driver {
 	return openf1.Driver{
 		DriverNumber: number, FirstName: firstName, LastName: lastName, FullName: fullName,
-		NameAcronym: acronym, TeamName: team, TeamColour: "ABCDEF", MeetingKey: 1235, SessionKey: 9500,
+		NameAcronym: acronym, TeamName: team, TeamColour: "ABCDEF", MeetingKey: 1236, SessionKey: 9500,
 	}
 }
 
