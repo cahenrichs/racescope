@@ -158,9 +158,9 @@ func (s *TimingStore) ReplaceTiming(ctx context.Context, snapshot ingest.TimingS
 		}
 		_, err := tx.Exec(ctx, `
 			INSERT INTO grand_prix_laps (session_entry_id, source_session_key, source_driver_number, lap_number,
-				duration_microseconds, is_pit_out_lap, source_fetched_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)`, entryID, snapshot.Target.SessionKey, lap.SourceDriverNumber,
-			lap.LapNumber, lap.DurationMicroseconds, lap.IsPitOutLap, snapshot.LapsFetchedAt)
+				duration_microseconds, is_pit_out_lap, is_stint_start, is_stint_end, source_fetched_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, entryID, snapshot.Target.SessionKey, lap.SourceDriverNumber,
+			lap.LapNumber, lap.DurationMicroseconds, lap.IsPitOutLap, lap.IsStintStart, lap.IsStintEnd, snapshot.LapsFetchedAt)
 		if err != nil {
 			return time.Time{}, fmt.Errorf("insert driver %d lap %d: %w", lap.SourceDriverNumber, lap.LapNumber, err)
 		}

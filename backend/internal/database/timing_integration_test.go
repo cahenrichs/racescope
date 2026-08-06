@@ -26,6 +26,10 @@ func TestTimingPublicationIsExactIdempotentAndSurvivesWeekendRepublication(t *te
 		t.Fatalf("EligibleTimingTarget() error = %v", err)
 	}
 	entryID := target.EntryIDsByNumber[16]
+	var originalSessionID, originalEntryID int64
+	if err := pool.QueryRow(ctx, `SELECT s.id, e.id FROM sessions s JOIN session_entries e ON e.session_id = s.id WHERE s.public_id = $1 AND e.public_id = $2`, target.SessionID, entryID).Scan(&originalSessionID, &originalEntryID); err != nil {
+		t.Fatalf("query original timing identities: %v", err)
+	}
 	duration := int64(74_123_456)
 	pitOut := true
 	compound := "HARD"
@@ -34,8 +38,8 @@ func TestTimingPublicationIsExactIdempotentAndSurvivesWeekendRepublication(t *te
 	snapshot := ingest.TimingSnapshot{
 		Target: target, LapsFetchedAt: fetchedAt, StintsFetchedAt: fetchedAt.Add(time.Minute),
 		Laps: []domain.Lap{
-			{SessionEntryID: entryID, SourceDriverNumber: 16, LapNumber: 1, DurationMicroseconds: nil, IsPitOutLap: &pitOut},
-			{SessionEntryID: entryID, SourceDriverNumber: 16, LapNumber: 2, DurationMicroseconds: &duration},
+			{SessionEntryID: entryID, SourceDriverNumber: 16, LapNumber: 1, DurationMicroseconds: nil, IsPitOutLap: &pitOut, IsStintStart: true},
+			{SessionEntryID: entryID, SourceDriverNumber: 16, LapNumber: 2, DurationMicroseconds: &duration, IsStintEnd: true},
 		},
 		Stints: []domain.Stint{{SessionEntryID: entryID, SourceDriverNumber: 16, StintNumber: 1, Compound: &compound, LapStart: &start, LapEnd: &end}},
 	}
@@ -58,6 +62,14 @@ func TestTimingPublicationIsExactIdempotentAndSurvivesWeekendRepublication(t *te
 	if nullDuration != nil || exactDuration == nil || *exactDuration != duration {
 		t.Fatalf("stored durations = %v/%v", nullDuration, exactDuration)
 	}
+	var storedPitOut *bool
+	var storedStart, storedEnd bool
+	if err := pool.QueryRow(ctx, `SELECT is_pit_out_lap, is_stint_start, is_stint_end FROM grand_prix_laps WHERE lap_number = 1`).Scan(&storedPitOut, &storedStart, &storedEnd); err != nil {
+		t.Fatalf("query stored markers: %v", err)
+	}
+	if storedPitOut == nil || !*storedPitOut || !storedStart || storedEnd {
+		t.Fatalf("stored lap 1 markers = pit-out %v, start %t, end %t", storedPitOut, storedStart, storedEnd)
+	}
 
 	broken := snapshot
 	broken.Laps = append(append([]domain.Lap(nil), snapshot.Laps...), snapshot.Laps[1])
@@ -71,6 +83,23 @@ func TestTimingPublicationIsExactIdempotentAndSurvivesWeekendRepublication(t *te
 	}
 	assertTableCount(t, pool, "grand_prix_laps", 2)
 	assertTableCount(t, pool, "session_timing_publications", 1)
+	var republishedSessionID, republishedEntryID int64
+	if err := pool.QueryRow(ctx, `SELECT s.id, e.id FROM sessions s JOIN session_entries e ON e.session_id = s.id WHERE s.public_id = $1 AND e.public_id = $2`, target.SessionID, entryID).Scan(&republishedSessionID, &republishedEntryID); err != nil {
+		t.Fatalf("query republished timing identities: %v", err)
+	}
+	if republishedSessionID != originalSessionID || republishedEntryID != originalEntryID {
+		t.Fatalf("republication changed stable identities from %d/%d to %d/%d", originalSessionID, originalEntryID, republishedSessionID, republishedEntryID)
+	}
+
+	changedIdentity := weekend
+	changedIdentity.SessionSourceKeys = cloneSourceKeys(weekend.SessionSourceKeys)
+	changedIdentity.SessionSourceKeys[target.SessionID] = target.SessionKey + 1
+	if _, err := weekendPublisher.ReplaceWeekend(ctx, changedIdentity); err != nil {
+		t.Fatalf("changed-identity republication error = %v", err)
+	}
+	assertTableCount(t, pool, "grand_prix_laps", 0)
+	assertTableCount(t, pool, "grand_prix_stints", 0)
+	assertTableCount(t, pool, "session_timing_publications", 0)
 }
 
 func TestTimingEligibilityDefersUnpublishedAndIncompleteWeekends(t *testing.T) {

@@ -114,6 +114,7 @@ func TransformTiming(target TimingTarget, sourceLaps []openf1.Lap, sourceStints 
 	snapshot := TimingSnapshot{Target: target, Laps: make([]domain.Lap, 0, len(sourceLaps)), Stints: make([]domain.Stint, 0, len(sourceStints))}
 	problems := make([]TransformError, 0)
 	seenLaps := make(map[[2]int]bool, len(sourceLaps))
+	lapIndexes := make(map[[2]int]int, len(sourceLaps))
 	for _, source := range sourceLaps {
 		entryID, known := target.EntryIDsByNumber[source.DriverNumber]
 		key := [2]int{source.DriverNumber, source.LapNumber}
@@ -129,6 +130,7 @@ func TransformTiming(target TimingTarget, sourceLaps []openf1.Lap, sourceStints 
 		default:
 			seenLaps[key] = true
 			snapshot.Laps = append(snapshot.Laps, domain.Lap{SessionEntryID: entryID, SourceDriverNumber: source.DriverNumber, LapNumber: source.LapNumber, DurationMicroseconds: source.LapDuration.Microseconds, IsPitOutLap: source.IsPitOutLap})
+			lapIndexes[key] = len(snapshot.Laps) - 1
 		}
 	}
 
@@ -151,6 +153,16 @@ func TransformTiming(target TimingTarget, sourceLaps []openf1.Lap, sourceStints 
 		default:
 			seenStints[key] = true
 			snapshot.Stints = append(snapshot.Stints, domain.Stint{SessionEntryID: entryID, SourceDriverNumber: source.DriverNumber, StintNumber: source.StintNumber, Compound: source.Compound, LapStart: source.LapStart, LapEnd: source.LapEnd})
+			if source.LapStart != nil {
+				if index, ok := lapIndexes[[2]int{source.DriverNumber, *source.LapStart}]; ok {
+					snapshot.Laps[index].IsStintStart = true
+				}
+			}
+			if source.LapEnd != nil {
+				if index, ok := lapIndexes[[2]int{source.DriverNumber, *source.LapEnd}]; ok {
+					snapshot.Laps[index].IsStintEnd = true
+				}
+			}
 		}
 	}
 	if len(problems) != 0 {

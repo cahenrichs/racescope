@@ -30,9 +30,9 @@ Prove the internal MVP by importing Grand Prix laps and stints for the selected 
 - [x] Store every source lap observation, including laps whose duration is missing, without floating-point conversion or zero coercion.
 - [x] Fetch timing only for an already published, non-cancelled Race/Race Grand Prix with a complete classification and a session outside the provider live-data window; audit ineligible attempts as deferred.
 - [x] Publish timing as an independent per-session unit while preserving the previous complete timing unit on failure and during ordinary weekend metadata republication.
-- [ ] Reconcile stable session and entry identities during weekend republication; remove timing only when its source session genuinely disappears or changes identity.
-- [ ] Derive separate stint-start and stint-end markers only from source stint endpoints, including the first start and final end; keep source-reported pit-out independent and never infer pit-in.
-- [ ] Test null durations, exact microsecond conversion, stint boundaries, pit-out markers, idempotency, failed replacement, weekend republication, and deferred ingestion.
+- [x] Reconcile stable session and entry identities during weekend republication; remove timing only when its source session genuinely disappears or changes identity.
+- [x] Derive separate stint-start and stint-end markers only from source stint endpoints, including the first start and final end; keep source-reported pit-out independent and never infer pit-in.
+- [x] Test null durations, exact microsecond conversion, stint boundaries, pit-out markers, idempotency, failed replacement, weekend republication, and deferred ingestion.
 
 **Complete when:**
 

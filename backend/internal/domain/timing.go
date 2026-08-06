@@ -7,6 +7,8 @@ type Lap struct {
 	LapNumber            int
 	DurationMicroseconds *int64
 	IsPitOutLap          *bool
+	IsStintStart         bool
+	IsStintEnd           bool
 }
 
 // Stint preserves the source-reported context for a numbered driver stint.
