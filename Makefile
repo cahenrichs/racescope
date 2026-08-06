@@ -19,7 +19,7 @@ api-run:
 	$(MAKE) -C backend run DATABASE_URL="$(DATABASE_URL)" PORT="$(PORT)"
 
 ingest:
-	$(MAKE) -C backend ingest SEASON="$(SEASON)" MEETING="$(MEETING)"
+	$(MAKE) -C backend ingest SEASON="$(SEASON)" MEETING="$(MEETING)" UNIT="$(UNIT)"
 
 frontend-run:
 	npm --prefix frontend run dev

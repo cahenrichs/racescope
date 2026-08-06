@@ -211,6 +211,38 @@ func (c *Client) SessionResults(ctx context.Context, sessions []Session) ([]Sess
 	return results, nil
 }
 
+// Laps fetches every source lap observation for a bounded historical session batch.
+func (c *Client) Laps(ctx context.Context, sessions []Session) ([]Lap, error) {
+	if err := c.validateDetailBatch(sessions); err != nil {
+		return nil, err
+	}
+	laps := make([]Lap, 0)
+	for _, session := range sessions {
+		var batch []Lap
+		if err := c.get(ctx, "laps", url.Values{"session_key": {strconv.Itoa(session.SessionKey)}}, &batch); err != nil {
+			return nil, fmt.Errorf("fetch laps for session %d: %w", session.SessionKey, err)
+		}
+		laps = append(laps, batch...)
+	}
+	return laps, nil
+}
+
+// Stints fetches source-reported stint context for a bounded historical session batch.
+func (c *Client) Stints(ctx context.Context, sessions []Session) ([]Stint, error) {
+	if err := c.validateDetailBatch(sessions); err != nil {
+		return nil, err
+	}
+	stints := make([]Stint, 0)
+	for _, session := range sessions {
+		var batch []Stint
+		if err := c.get(ctx, "stints", url.Values{"session_key": {strconv.Itoa(session.SessionKey)}}, &batch); err != nil {
+			return nil, fmt.Errorf("fetch stints for session %d: %w", session.SessionKey, err)
+		}
+		stints = append(stints, batch...)
+	}
+	return stints, nil
+}
+
 func (c *Client) RequestRecords() []RequestRecord {
 	c.recordsMu.Lock()
 	defer c.recordsMu.Unlock()

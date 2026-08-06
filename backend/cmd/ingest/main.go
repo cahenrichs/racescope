@@ -23,6 +23,7 @@ const openF1BaseURLKey = "OPENF1_BASE_URL"
 type options struct {
 	season     int
 	meetingKey int
+	unit       string
 }
 
 func main() {
@@ -40,8 +41,13 @@ type weekendImporter interface {
 	ImportWeekend(context.Context, ingest.Target) (ingest.Outcome, error)
 }
 
+type timingImporter interface {
+	ImportTiming(context.Context, ingest.Target) (ingest.TimingOutcome, error)
+}
+
 type commandRuntime struct {
 	importer       weekendImporter
+	timingImporter timingImporter
 	audit          database.AuditDB
 	requestRecords func() []openf1.RequestRecord
 	close          func()
@@ -62,6 +68,9 @@ func run(ctx context.Context, args []string, output, errorOutput io.Writer, curr
 	defer runtime.close()
 
 	target := ingest.Target{Season: options.season, MeetingKey: options.meetingKey}
+	if options.unit == "timing" {
+		return runTiming(ctx, runtime, target, output, options)
+	}
 	var runID int64
 	if runtime.audit != nil {
 		runID, err = database.CreateImportRun(ctx, runtime.audit, target.Season, target.MeetingKey, time.Now().UTC())
@@ -98,6 +107,35 @@ func run(ctx context.Context, args []string, output, errorOutput io.Writer, curr
 	return nil
 }
 
+func runTiming(ctx context.Context, runtime commandRuntime, target ingest.Target, output io.Writer, options options) error {
+	if runtime.timingImporter == nil {
+		return errors.New("timing importer is not configured")
+	}
+	var runID int64
+	var err error
+	if runtime.audit != nil {
+		runID, err = database.CreateTimingImportRun(ctx, runtime.audit, target.Season, target.MeetingKey, time.Now().UTC())
+		if err != nil {
+			return err
+		}
+	}
+	outcome, importErr := runtime.timingImporter.ImportTiming(ctx, target)
+	if runtime.audit != nil {
+		auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		auditErr := recordTimingAudit(auditCtx, runtime, runID, outcome, importErr)
+		cancel()
+		if auditErr != nil {
+			importErr = errors.Join(importErr, auditErr)
+		}
+	}
+	if importErr != nil {
+		return fmt.Errorf("import timing for season %d meeting %d: %w", options.season, options.meetingKey, importErr)
+	}
+	fmt.Fprintf(output, "timing published: session_id=%s laps=%d stints=%d published_at=%s\n",
+		outcome.SessionID, outcome.LapCount, outcome.StintCount, outcome.PublishedAt.Format(time.RFC3339))
+	return nil
+}
+
 func newRuntime(ctx context.Context) (commandRuntime, error) {
 	client, err := openf1.NewClient(openf1.Config{BaseURL: strings.TrimSpace(os.Getenv(openF1BaseURLKey))})
 	if err != nil {
@@ -113,10 +151,77 @@ func newRuntime(ctx context.Context) (commandRuntime, error) {
 		return commandRuntime{}, fmt.Errorf("connect to PostgreSQL: %w", err)
 	}
 
+	timingStore := database.NewTimingStore(pool)
 	return commandRuntime{
-		importer: ingest.NewImporter(client, database.NewWeekendPublisher(pool)), audit: pool,
+		importer:       ingest.NewImporter(client, database.NewWeekendPublisher(pool)),
+		timingImporter: ingest.NewTimingImporter(timingStore, client, timingStore), audit: pool,
 		requestRecords: client.RequestRecords, close: pool.Close,
 	}, nil
+}
+
+func recordTimingAudit(ctx context.Context, runtime commandRuntime, runID int64, outcome ingest.TimingOutcome, importErr error) error {
+	var auditErrors []error
+	if runtime.requestRecords != nil {
+		for _, request := range runtime.requestRecords() {
+			if err := database.RecordImportRunRequest(ctx, runtime.audit, runID, database.ImportRunRequest{
+				Endpoint: request.Endpoint, Parameters: request.Parameters, ResponseStatus: request.ResponseStatus,
+				FetchedAt: request.FetchedAt, RecordCount: request.RecordCount, ResponseSHA256: request.ResponseSHA256,
+			}); err != nil {
+				auditErrors = append(auditErrors, err)
+			}
+		}
+	}
+	status := "succeeded"
+	var publishedAt *time.Time
+	var deferredReason *string
+	if importErr == nil && !outcome.PublishedAt.IsZero() {
+		published := outcome.PublishedAt
+		publishedAt = &published
+	} else if importErr == nil {
+		status = "failed"
+		auditErrors = append(auditErrors, errors.New("successful timing import did not report publication time"))
+	} else {
+		status = "failed"
+		var deferred *ingest.DeferredTimingError
+		if errors.As(importErr, &deferred) || errors.Is(importErr, openf1.ErrLiveDataWindow) {
+			status = "deferred"
+			reason := importErr.Error()
+			deferredReason = &reason
+		}
+		var quarantined *ingest.QuarantineError
+		if errors.As(importErr, &quarantined) {
+			status = "quarantined"
+			for order, problem := range quarantined.Errors {
+				if err := database.RecordImportRunError(ctx, runtime.audit, runID, database.ImportRunError{
+					Order: order, Code: problem.Code, Entity: problem.Entity,
+					SourceContext: map[string]any{"source_value": problem.SourceValue, "driver_number": problem.DriverNumber}, Message: problem.Message,
+				}); err != nil {
+					auditErrors = append(auditErrors, err)
+				}
+			}
+		}
+	}
+	if err := database.FinishImportRun(ctx, runtime.audit, runID, database.ImportRunCompletion{
+		Status: status, FinishedAt: time.Now().UTC(), SessionCount: boolCount(outcome.SessionKey > 0), LapCount: outcome.LapCount,
+		StintCount: outcome.StintCount, SourceSessionKey: optionalPositiveInt(outcome.SessionKey), DeferredReason: deferredReason, PublishedAt: publishedAt,
+	}); err != nil {
+		auditErrors = append(auditErrors, err)
+	}
+	return errors.Join(auditErrors...)
+}
+
+func boolCount(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+func optionalPositiveInt(value int) *int {
+	if value <= 0 {
+		return nil
+	}
+	return &value
 }
 
 func recordAudit(ctx context.Context, runtime commandRuntime, runID int64, outcome ingest.Outcome, importErr error) error {
@@ -180,13 +285,14 @@ func parseOptions(args []string, output io.Writer, currentYear int) (options, er
 	flags := flag.NewFlagSet("ingest", flag.ContinueOnError)
 	flags.SetOutput(output)
 	flags.Usage = func() {
-		fmt.Fprintln(output, "Usage: ingest --season YEAR --meeting OPENF1_MEETING_KEY")
+		fmt.Fprintln(output, "Usage: ingest --season YEAR --meeting OPENF1_MEETING_KEY [--unit weekend|timing]")
 		flags.PrintDefaults()
 	}
 
 	var parsed options
 	flags.IntVar(&parsed.season, "season", 0, "season year to import")
 	flags.IntVar(&parsed.meetingKey, "meeting", 0, "OpenF1 meeting key to import")
+	flags.StringVar(&parsed.unit, "unit", "weekend", "publication unit to import: weekend or timing")
 	if err := flags.Parse(args); err != nil {
 		return options{}, err
 	}
@@ -198,6 +304,9 @@ func parseOptions(args []string, output io.Writer, currentYear int) (options, er
 	}
 	if parsed.meetingKey <= 0 {
 		return options{}, errors.New("meeting must be a positive OpenF1 meeting key")
+	}
+	if parsed.unit != "weekend" && parsed.unit != "timing" {
+		return options{}, errors.New("unit must be weekend or timing")
 	}
 
 	return parsed, nil

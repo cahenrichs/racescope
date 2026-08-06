@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"time"
 )
 
@@ -98,4 +99,50 @@ type SessionResult struct {
 	NumberOfLaps *int        `json:"number_of_laps"`
 	Position     *int        `json:"position"`
 	SessionKey   int         `json:"session_key"`
+}
+
+// MicrosecondDuration decodes source seconds exactly, without a float64 round trip.
+type MicrosecondDuration struct {
+	Present      bool
+	Microseconds *int64
+}
+
+func (d *MicrosecondDuration) UnmarshalJSON(data []byte) error {
+	*d = MicrosecondDuration{Present: true}
+	data = bytes.TrimSpace(data)
+	if bytes.Equal(data, []byte("null")) {
+		return nil
+	}
+	seconds, ok := new(big.Rat).SetString(string(data))
+	if !ok {
+		return fmt.Errorf("expected duration seconds as a number or null")
+	}
+	microseconds := new(big.Rat).Mul(seconds, big.NewRat(1_000_000, 1))
+	if !microseconds.IsInt() || !microseconds.Num().IsInt64() || microseconds.Sign() < 0 {
+		return fmt.Errorf("duration must be a non-negative whole number of microseconds")
+	}
+	value := microseconds.Num().Int64()
+	d.Microseconds = &value
+	return nil
+}
+
+// Lap is the source timing observation retained for one driver and lap number.
+type Lap struct {
+	MeetingKey   int                 `json:"meeting_key"`
+	SessionKey   int                 `json:"session_key"`
+	DriverNumber int                 `json:"driver_number"`
+	LapNumber    int                 `json:"lap_number"`
+	LapDuration  MicrosecondDuration `json:"lap_duration"`
+	IsPitOutLap  *bool               `json:"is_pit_out_lap"`
+}
+
+// Stint is the source-reported tire context and endpoints for one driver stint.
+type Stint struct {
+	MeetingKey   int     `json:"meeting_key"`
+	SessionKey   int     `json:"session_key"`
+	DriverNumber int     `json:"driver_number"`
+	StintNumber  int     `json:"stint_number"`
+	Compound     *string `json:"compound"`
+	LapStart     *int    `json:"lap_start"`
+	LapEnd       *int    `json:"lap_end"`
 }

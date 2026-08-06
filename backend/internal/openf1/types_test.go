@@ -30,3 +30,32 @@ func TestResultValueDistinguishesZeroNullAndMissing(t *testing.T) {
 		t.Fatalf("missing values were marked present: %+v %+v", results[1].GapToLeader, results[2].Duration)
 	}
 }
+
+func TestLapDurationPreservesExactMicrosecondsAndMissingValues(t *testing.T) {
+	t.Parallel()
+	var laps []Lap
+	if err := json.Unmarshal([]byte(`[
+		{"lap_duration":78.123456},
+		{"lap_duration":null},
+		{}
+	]`), &laps); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if got := laps[0].LapDuration.Microseconds; got == nil || *got != 78_123_456 {
+		t.Fatalf("exact duration = %v, want 78123456", got)
+	}
+	if !laps[1].LapDuration.Present || laps[1].LapDuration.Microseconds != nil {
+		t.Fatalf("null duration = %+v", laps[1].LapDuration)
+	}
+	if laps[2].LapDuration.Present || laps[2].LapDuration.Microseconds != nil {
+		t.Fatalf("missing duration = %+v", laps[2].LapDuration)
+	}
+}
+
+func TestLapDurationRejectsSubMicrosecondPrecision(t *testing.T) {
+	t.Parallel()
+	var lap Lap
+	if err := json.Unmarshal([]byte(`{"lap_duration":1.0000001}`), &lap); err == nil {
+		t.Fatal("json.Unmarshal() error = nil")
+	}
+}

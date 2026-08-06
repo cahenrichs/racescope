@@ -33,14 +33,17 @@ type ImportRunError struct {
 }
 
 type ImportRunCompletion struct {
-	Status         string
-	FinishedAt     time.Time
-	SessionCount   int
-	EntryCount     int
-	ResultCount    int
-	ErrorCount     int
-	DeferredReason *string
-	PublishedAt    *time.Time
+	Status           string
+	FinishedAt       time.Time
+	SessionCount     int
+	EntryCount       int
+	ResultCount      int
+	LapCount         int
+	StintCount       int
+	SourceSessionKey *int
+	ErrorCount       int
+	DeferredReason   *string
+	PublishedAt      *time.Time
 }
 
 func CreateImportRun(ctx context.Context, db AuditDB, season, meetingKey int, startedAt time.Time) (int64, error) {
@@ -50,6 +53,17 @@ func CreateImportRun(ctx context.Context, db AuditDB, season, meetingKey int, st
 		VALUES ('running', $1, $2, $3) RETURNING id`, season, meetingKey, startedAt).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("create import run: %w", err)
+	}
+	return id, nil
+}
+
+func CreateTimingImportRun(ctx context.Context, db AuditDB, season, meetingKey int, startedAt time.Time) (int64, error) {
+	var id int64
+	err := db.QueryRow(ctx, `
+		INSERT INTO import_runs (status, unit, season, source_meeting_key, started_at)
+		VALUES ('running', 'timing', $1, $2, $3) RETURNING id`, season, meetingKey, startedAt).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("create timing import run: %w", err)
 	}
 	return id, nil
 }
@@ -88,10 +102,11 @@ func FinishImportRun(ctx context.Context, db AuditDB, runID int64, completion Im
 	result, err := db.Exec(ctx, `
 		UPDATE import_runs
 		SET status = $2, finished_at = $3, session_count = $4, entry_count = $5, result_count = $6,
-			error_count = $7, deferred_reason = $8, published_at = $9
+			error_count = $7, deferred_reason = $8, published_at = $9, lap_count = $10, stint_count = $11,
+			source_session_key = $12
 		WHERE id = $1 AND status = 'running'`, runID, completion.Status, completion.FinishedAt,
 		completion.SessionCount, completion.EntryCount, completion.ResultCount, completion.ErrorCount,
-		completion.DeferredReason, completion.PublishedAt)
+		completion.DeferredReason, completion.PublishedAt, completion.LapCount, completion.StintCount, completion.SourceSessionKey)
 	if err != nil {
 		return fmt.Errorf("finish import run: %w", err)
 	}

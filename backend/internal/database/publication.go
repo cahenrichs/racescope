@@ -14,7 +14,7 @@ type TransactionStarter interface {
 	Begin(context.Context) (pgx.Tx, error)
 }
 
-// WeekendPublisher replaces all meeting-owned rows in one transaction while upserting shared stable entities.
+// WeekendPublisher reconciles meeting-owned rows in one transaction while preserving stable database identities.
 type WeekendPublisher struct {
 	db  TransactionStarter
 	now func() time.Time
@@ -78,28 +78,43 @@ func (p *WeekendPublisher) ReplaceWeekend(ctx context.Context, snapshot ingest.S
 		SELECT e.id FROM session_entries e JOIN sessions s ON s.id = e.session_id WHERE s.meeting_id = $1)`, meetingID); err != nil {
 		return time.Time{}, fmt.Errorf("delete old results: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM session_entries WHERE session_id IN (SELECT id FROM sessions WHERE meeting_id = $1)`, meetingID); err != nil {
-		return time.Time{}, fmt.Errorf("delete old entries: %w", err)
-	}
-	if _, err := tx.Exec(ctx, `DELETE FROM sessions WHERE meeting_id = $1`, meetingID); err != nil {
-		return time.Time{}, fmt.Errorf("delete old sessions: %w", err)
-	}
-
 	sessionIDs := make(map[domain.PublicID]int64, len(snapshot.Weekend.Sessions))
+	sessionPublicIDs := make([]string, 0, len(snapshot.Weekend.Sessions))
 	for _, session := range snapshot.Weekend.Sessions {
 		sourceKey, ok := snapshot.SessionSourceKeys[session.PublicID]
 		if !ok {
 			return time.Time{}, fmt.Errorf("session %q has no private source key", session.PublicID)
 		}
+		// A changed provider key is a changed source identity, so its old timing unit cannot survive reconciliation.
+		if _, err := tx.Exec(ctx, `
+			DELETE FROM session_timing_publications WHERE session_id IN
+				(SELECT id FROM sessions WHERE public_id = $1 AND source_key <> $2)`, session.PublicID, sourceKey); err != nil {
+			return time.Time{}, fmt.Errorf("remove timing for changed session identity %q: %w", session.PublicID, err)
+		}
+		if _, err := tx.Exec(ctx, `
+			DELETE FROM grand_prix_laps WHERE session_entry_id IN
+				(SELECT e.id FROM session_entries e JOIN sessions s ON s.id = e.session_id WHERE s.public_id = $1 AND s.source_key <> $2)`, session.PublicID, sourceKey); err != nil {
+			return time.Time{}, fmt.Errorf("remove laps for changed session identity %q: %w", session.PublicID, err)
+		}
+		if _, err := tx.Exec(ctx, `
+			DELETE FROM grand_prix_stints WHERE session_entry_id IN
+				(SELECT e.id FROM session_entries e JOIN sessions s ON s.id = e.session_id WHERE s.public_id = $1 AND s.source_key <> $2)`, session.PublicID, sourceKey); err != nil {
+			return time.Time{}, fmt.Errorf("remove stints for changed session identity %q: %w", session.PublicID, err)
+		}
 		var id int64
 		err := tx.QueryRow(ctx, `
 			INSERT INTO sessions (public_id, source_key, meeting_id, name, type, date_start, date_end, is_cancelled, source_fetched_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`, session.PublicID, sourceKey, meetingID,
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			ON CONFLICT (public_id) DO UPDATE SET source_key = EXCLUDED.source_key, meeting_id = EXCLUDED.meeting_id,
+				name = EXCLUDED.name, type = EXCLUDED.type, date_start = EXCLUDED.date_start, date_end = EXCLUDED.date_end,
+				is_cancelled = EXCLUDED.is_cancelled, source_fetched_at = EXCLUDED.source_fetched_at, ingested_at = CURRENT_TIMESTAMP
+			RETURNING id`, session.PublicID, sourceKey, meetingID,
 			session.Name, session.Type, session.DateStart, session.DateEnd, session.IsCancelled, fetchedAt.Sessions).Scan(&id)
 		if err != nil {
 			return time.Time{}, fmt.Errorf("insert session %q: %w", session.PublicID, err)
 		}
 		sessionIDs[session.PublicID] = id
+		sessionPublicIDs = append(sessionPublicIDs, session.PublicID.String())
 	}
 
 	driverIDs := make(map[domain.PublicID]int64, len(snapshot.Drivers))
@@ -134,6 +149,7 @@ func (p *WeekendPublisher) ReplaceWeekend(ctx context.Context, snapshot ingest.S
 	}
 
 	entryIDs := make(map[domain.PublicID]int64, len(snapshot.Entries))
+	entryPublicIDs := make([]string, 0, len(snapshot.Entries))
 	for _, entry := range snapshot.Entries {
 		sessionID, sessionOK := sessionIDs[entry.SessionID]
 		driverID, driverOK := driverIDs[entry.Driver.PublicID]
@@ -144,12 +160,17 @@ func (p *WeekendPublisher) ReplaceWeekend(ctx context.Context, snapshot ingest.S
 		var id int64
 		err := tx.QueryRow(ctx, `
 			INSERT INTO session_entries (public_id, session_id, driver_id, constructor_entrant_id, driver_number, team_colour, source_fetched_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`, entry.PublicID, sessionID, driverID,
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			ON CONFLICT (public_id) DO UPDATE SET session_id = EXCLUDED.session_id, driver_id = EXCLUDED.driver_id,
+				constructor_entrant_id = EXCLUDED.constructor_entrant_id, driver_number = EXCLUDED.driver_number,
+				team_colour = EXCLUDED.team_colour, source_fetched_at = EXCLUDED.source_fetched_at, ingested_at = CURRENT_TIMESTAMP
+			RETURNING id`, entry.PublicID, sessionID, driverID,
 			constructorID, entry.DriverNumber, entry.TeamColour, fetchedAt.Drivers).Scan(&id)
 		if err != nil {
 			return time.Time{}, fmt.Errorf("insert entry %q: %w", entry.PublicID, err)
 		}
 		entryIDs[entry.PublicID] = id
+		entryPublicIDs = append(entryPublicIDs, entry.PublicID.String())
 	}
 
 	for _, result := range snapshot.Results {
@@ -171,6 +192,14 @@ func (p *WeekendPublisher) ReplaceWeekend(ctx context.Context, snapshot ingest.S
 		if err != nil {
 			return time.Time{}, fmt.Errorf("insert result %q: %w", result.PublicID, err)
 		}
+	}
+
+	if _, err := tx.Exec(ctx, `DELETE FROM session_entries WHERE session_id IN
+		(SELECT id FROM sessions WHERE meeting_id = $1) AND NOT (public_id = ANY($2))`, meetingID, entryPublicIDs); err != nil {
+		return time.Time{}, fmt.Errorf("delete disappeared entries: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM sessions WHERE meeting_id = $1 AND NOT (public_id = ANY($2))`, meetingID, sessionPublicIDs); err != nil {
+		return time.Time{}, fmt.Errorf("delete disappeared sessions: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
