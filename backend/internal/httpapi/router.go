@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/clint/f1/backend/internal/database"
+	"github.com/clint/f1/backend/internal/statistics"
 )
 
 type routerDatabase interface {
@@ -23,5 +24,6 @@ func NewRouter(db routerDatabase) http.Handler {
 	mux.HandleFunc("GET /api/dashboard", dashboard(db))
 	mux.HandleFunc("GET /api/races/{meetingID}", raceDetail(db))
 	mux.HandleFunc("GET /api/races/{meetingID}/results", raceResults(db))
+	mux.HandleFunc("POST /api/statistics/query", statisticsQuery(statistics.NewService(database.NewStatisticsStore(db))))
 	return mux
 }

@@ -57,8 +57,8 @@ Prove the internal MVP by importing Grand Prix laps and stints for the selected 
 
 - [x] Define the discriminated lap-comparison request and stable success, no-data, and validation responses using integer `durationMicroseconds` values.
 - [x] Use HTTP 200 for success, partial, and no-data responses; 400 for malformed requests; 422 for invalid or unsupported combinations; 404 for unknown public IDs; and 429 for rate limits.
-- [ ] Validate exactly two distinct public driver IDs, one Grand Prix session, and bounded input size, then canonicalize the driver IDs so reversed selections are the same comparison.
-- [ ] Return every source lap observation; use a null duration plus a typed missing reason when the source lap has no duration.
+- [x] Validate exactly two distinct public driver IDs, one Grand Prix session, and bounded input size, then canonicalize the driver IDs so reversed selections are the same comparison.
+- [x] Return every source lap observation; use a null duration plus a typed missing reason when the source lap has no duration.
 - [ ] Return compound, stint, source-reported pit-out, and separate sourced stint-start and stint-end context without a pit-in field.
 - [ ] Include title, dimension, series, units, preferred chart type, typed warnings, per-series and per-field coverage, and freshness metadata.
 - [ ] Model result kind, coverage (`complete` or `partial`), and freshness (`fresh` or `stale`) independently; completed Monaco data remains fresh unless reconciliation explicitly fails.
