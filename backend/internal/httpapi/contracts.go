@@ -1,6 +1,10 @@
 package httpapi
 
-import "time"
+import (
+	"time"
+
+	"github.com/clint/f1/backend/internal/statistics"
+)
 
 type coverageResponse struct {
 	Status          string    `json:"status"`
@@ -94,6 +98,7 @@ type errorResponse struct {
 }
 
 type apiError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code    string                       `json:"code"`
+	Message string                       `json:"message"`
+	Issues  []statistics.ValidationIssue `json:"issues,omitempty"`
 }
