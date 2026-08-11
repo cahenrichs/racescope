@@ -2,6 +2,7 @@ package statistics
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
@@ -17,6 +18,9 @@ func (fn repositoryFunc) LapComparison(ctx context.Context, sessionID string, dr
 func TestServiceCanonicalizesDriversAndReturnsEveryLap(t *testing.T) {
 	t.Parallel()
 	duration := int64(74_123_456)
+	compound := "HARD"
+	stint := 1
+	pitOut := true
 	repository := repositoryFunc(func(_ context.Context, sessionID string, driverIDs []string) (LapComparisonSource, error) {
 		if sessionID != "session_monaco" || !reflect.DeepEqual(driverIDs, []string{"driver_leclerc", "driver_piastri"}) {
 			t.Fatalf("repository request = %q, %v", sessionID, driverIDs)
@@ -24,8 +28,11 @@ func TestServiceCanonicalizesDriversAndReturnsEveryLap(t *testing.T) {
 		return LapComparisonSource{
 			SessionID: sessionID,
 			Drivers: []SourceDriver{
-				{ID: "driver_piastri", Name: "Oscar Piastri", Acronym: "PIA", Observations: []SourceLapObservation{{LapNumber: 1, DurationMicroseconds: &duration}}},
-				{ID: "driver_leclerc", Name: "Charles Leclerc", Acronym: "LEC", Observations: []SourceLapObservation{{LapNumber: 1}, {LapNumber: 2, DurationMicroseconds: &duration}}},
+				{ID: "driver_piastri", Name: "Oscar Piastri", Acronym: "PIA", Observations: []SourceLapObservation{{LapNumber: 1, DurationMicroseconds: &duration, Compound: &compound, StintNumber: &stint, IsPitOutLap: &pitOut, IsStintStart: true, IsStintEnd: true}}},
+				{ID: "driver_leclerc", Name: "Charles Leclerc", Acronym: "LEC", Observations: []SourceLapObservation{
+					{LapNumber: 1, Compound: &compound, StintNumber: &stint, IsPitOutLap: &pitOut, IsStintStart: true},
+					{LapNumber: 2, DurationMicroseconds: &duration, StintNumber: &stint, IsPitOutLap: &pitOut, IsStintEnd: true},
+				}},
 			},
 		}, nil
 	})
@@ -49,6 +56,25 @@ func TestServiceCanonicalizesDriversAndReturnsEveryLap(t *testing.T) {
 	}
 	if response.Result.Series[0].Observations[1].MissingReason != nil {
 		t.Fatalf("available duration has missing reason = %+v", response.Result.Series[0].Observations[1])
+	}
+	if response.Result.Title != "Charles Leclerc and Oscar Piastri lap comparison" || response.Result.Dimension != "lap" || response.Result.Units != "microseconds" || response.Result.PreferredChartType != "line" {
+		t.Fatalf("chart metadata = %+v", response.Result)
+	}
+	if response.Result.Series[0].Style != lapComparisonStyles[0] || response.Result.Series[1].Style != lapComparisonStyles[1] {
+		t.Fatalf("series styles = %+v", response.Result.Series)
+	}
+	if response.Coverage.Status != CoveragePartial || len(response.Coverage.Series) != 2 || response.Coverage.Series[0].SeriesID != "driver_leclerc" {
+		t.Fatalf("coverage = %+v", response.Coverage)
+	}
+	if len(response.Warnings) != 1 || response.Warnings[0].Code != WarningLapContextMissing || response.Warnings[0].Field != "compound" || response.Warnings[0].SeriesID != "driver_leclerc" {
+		t.Fatalf("warnings = %+v", response.Warnings)
+	}
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if strings.Contains(string(encoded), "pitIn") {
+		t.Fatalf("response inferred pit-in context: %s", encoded)
 	}
 }
 

@@ -34,6 +34,11 @@ type SourceDriver struct {
 type SourceLapObservation struct {
 	LapNumber            int
 	DurationMicroseconds *int64
+	Compound             *string
+	StintNumber          *int
+	IsPitOutLap          *bool
+	IsStintStart         bool
+	IsStintEnd           bool
 }
 
 type Repository interface {

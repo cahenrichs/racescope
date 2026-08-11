@@ -95,11 +95,15 @@ type MissingReason string
 
 const MissingSourceDuration MissingReason = "source-duration-missing"
 
+type WarningCode string
+
+const WarningLapContextMissing WarningCode = "lap_context_missing"
+
 type Warning struct {
-	Code     string `json:"code"`
-	Message  string `json:"message"`
-	Field    string `json:"field,omitempty"`
-	SeriesID string `json:"seriesId,omitempty"`
+	Code     WarningCode `json:"code"`
+	Message  string      `json:"message"`
+	Field    string      `json:"field,omitempty"`
+	SeriesID string      `json:"seriesId,omitempty"`
 }
 
 type FieldCoverage struct {
@@ -109,8 +113,9 @@ type FieldCoverage struct {
 }
 
 type SeriesCoverage struct {
-	Status CoverageStatus  `json:"status"`
-	Fields []FieldCoverage `json:"fields"`
+	SeriesID string          `json:"seriesId"`
+	Status   CoverageStatus  `json:"status"`
+	Fields   []FieldCoverage `json:"fields"`
 }
 
 type Coverage struct {
