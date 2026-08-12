@@ -17,6 +17,7 @@ func lapComparisonResponse(source LapComparisonSource, canonicalDriverIDs []stri
 	coverageBySeries := make([]SeriesCoverage, 0, len(canonicalDriverIDs))
 	warnings := make([]Warning, 0)
 	overallCoverage := CoverageComplete
+	usableDurations := 0
 	for index, driverID := range canonicalDriverIDs {
 		sourceDriver := drivers[driverID]
 		observations := make([]LapObservation, 0, len(sourceDriver.Observations))
@@ -29,6 +30,8 @@ func lapComparisonResponse(source LapComparisonSource, canonicalDriverIDs []stri
 			if lap.DurationMicroseconds == nil {
 				reason := MissingSourceDuration
 				observation.MissingReason = &reason
+			} else {
+				usableDurations++
 			}
 			observations = append(observations, observation)
 		}
@@ -46,6 +49,35 @@ func lapComparisonResponse(source LapComparisonSource, canonicalDriverIDs []stri
 		})
 	}
 
+	if usableDurations == 0 {
+		for index := range coverageBySeries {
+			coverageBySeries[index].Status = CoveragePartial
+			series[index].Coverage.Status = CoveragePartial
+		}
+		freshness := lapComparisonFreshness(source, &warnings)
+		return QueryResponse{
+			Kind: ResultNoData, Analysis: AnalysisLapComparison,
+			NoData:   &NoData{Code: "no_usable_lap_durations", Message: "Neither selected driver has a usable lap duration."},
+			Warnings: warnings, Coverage: Coverage{Status: CoveragePartial, Series: coverageBySeries},
+			Freshness: freshness,
+		}
+	}
+
+	for index, item := range coverageBySeries {
+		durationCoverage := item.Fields[0]
+		if durationCoverage.Available != 0 {
+			continue
+		}
+		overallCoverage = CoveragePartial
+		coverageBySeries[index].Status = CoveragePartial
+		series[index].Coverage.Status = CoveragePartial
+		warnings = append(warnings, Warning{
+			Code: WarningDriverLapsMissing, SeriesID: item.SeriesID,
+			Message: "The selected driver has no usable lap durations.",
+		})
+	}
+
+	freshness := lapComparisonFreshness(source, &warnings)
 	return QueryResponse{
 		Kind: ResultSuccess, Analysis: AnalysisLapComparison,
 		Result: &LapComparisonResult{
@@ -54,8 +86,20 @@ func lapComparisonResponse(source LapComparisonSource, canonicalDriverIDs []stri
 			Dimension: "lap", Units: "microseconds", PreferredChartType: "line", Series: series,
 		},
 		Warnings: warnings, Coverage: Coverage{Status: overallCoverage, Series: coverageBySeries},
-		Freshness: Freshness{Status: FreshnessFresh, SourceFetchedAt: source.SourceFetchedAt, PublishedAt: source.PublishedAt},
+		Freshness: freshness,
 	}
+}
+
+func lapComparisonFreshness(source LapComparisonSource, warnings *[]Warning) Freshness {
+	status := FreshnessFresh
+	if source.ReconciliationFailed {
+		status = FreshnessStale
+		*warnings = append(*warnings, Warning{
+			Code:    WarningReconciliationFailed,
+			Message: "A newer source reconciliation failed; the last complete published timing data is being served.",
+		})
+	}
+	return Freshness{Status: status, SourceFetchedAt: source.SourceFetchedAt, PublishedAt: source.PublishedAt}
 }
 
 func lapSeriesCoverage(driver SourceDriver) (SeriesCoverage, []Warning) {

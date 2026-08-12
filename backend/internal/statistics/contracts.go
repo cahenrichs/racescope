@@ -97,7 +97,11 @@ const MissingSourceDuration MissingReason = "source-duration-missing"
 
 type WarningCode string
 
-const WarningLapContextMissing WarningCode = "lap_context_missing"
+const (
+	WarningLapContextMissing    WarningCode = "lap_context_missing"
+	WarningDriverLapsMissing    WarningCode = "driver_laps_missing"
+	WarningReconciliationFailed WarningCode = "source_reconciliation_failed"
+)
 
 type Warning struct {
 	Code     WarningCode `json:"code"`

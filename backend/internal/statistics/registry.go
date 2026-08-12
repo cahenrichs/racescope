@@ -18,10 +18,11 @@ var (
 )
 
 type LapComparisonSource struct {
-	SessionID       string
-	Drivers         []SourceDriver
-	SourceFetchedAt time.Time
-	PublishedAt     time.Time
+	SessionID            string
+	Drivers              []SourceDriver
+	SourceFetchedAt      time.Time
+	PublishedAt          time.Time
+	ReconciliationFailed bool
 }
 
 type SourceDriver struct {

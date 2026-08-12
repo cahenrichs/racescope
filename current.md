@@ -61,9 +61,9 @@ Prove the internal MVP by importing Grand Prix laps and stints for the selected 
 - [x] Return every source lap observation; use a null duration plus a typed missing reason when the source lap has no duration.
 - [x] Return compound, stint, source-reported pit-out, and separate sourced stint-start and stint-end context without a pit-in field.
 - [x] Include title, dimension, series, units, preferred chart type, typed warnings, per-series and per-field coverage, and freshness metadata.
-- [ ] Model result kind, coverage (`complete` or `partial`), and freshness (`fresh` or `stale`) independently; completed Monaco data remains fresh unless reconciliation explicitly fails.
-- [ ] Return partial coverage with warnings when only one driver has usable laps or when lap context is missing; reserve no-data for requests where neither driver has a usable duration.
-- [ ] Add contract tests for valid, malformed, unsupported, unknown-ID, no-data, partial-coverage, stale, rate-limited, and reversed-driver requests.
+- [x] Model result kind, coverage (`complete` or `partial`), and freshness (`fresh` or `stale`) independently; completed Monaco data remains fresh unless reconciliation explicitly fails.
+- [x] Return partial coverage with warnings when only one driver has usable laps or when lap context is missing; reserve no-data for requests where neither driver has a usable duration.
+- [x] Add contract tests for valid, malformed, unsupported, unknown-ID, no-data, partial-coverage, stale, rate-limited, and reversed-driver requests.
 
 **Complete when:**
 

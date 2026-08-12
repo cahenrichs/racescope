@@ -63,6 +63,9 @@ func TestServiceCanonicalizesDriversAndReturnsEveryLap(t *testing.T) {
 	if response.Result.Series[0].Style != lapComparisonStyles[0] || response.Result.Series[1].Style != lapComparisonStyles[1] {
 		t.Fatalf("series styles = %+v", response.Result.Series)
 	}
+	if response.Freshness.Status != FreshnessFresh {
+		t.Fatalf("freshness = %+v", response.Freshness)
+	}
 	if response.Coverage.Status != CoveragePartial || len(response.Coverage.Series) != 2 || response.Coverage.Series[0].SeriesID != "driver_leclerc" {
 		t.Fatalf("coverage = %+v", response.Coverage)
 	}
@@ -75,6 +78,87 @@ func TestServiceCanonicalizesDriversAndReturnsEveryLap(t *testing.T) {
 	}
 	if strings.Contains(string(encoded), "pitIn") {
 		t.Fatalf("response inferred pit-in context: %s", encoded)
+	}
+}
+
+func TestServiceReturnsPartialWhenOnlyOneDriverHasUsableLaps(t *testing.T) {
+	t.Parallel()
+	duration := int64(74_123_456)
+	compound := "HARD"
+	stint := 1
+	pitOut := false
+	repository := repositoryFunc(func(context.Context, string, []string) (LapComparisonSource, error) {
+		return LapComparisonSource{SessionID: "session_monaco", Drivers: []SourceDriver{
+			{ID: "driver_leclerc", Name: "Charles Leclerc", Acronym: "LEC", Observations: []SourceLapObservation{{LapNumber: 1, DurationMicroseconds: &duration, Compound: &compound, StintNumber: &stint, IsPitOutLap: &pitOut}}},
+			{ID: "driver_piastri", Name: "Oscar Piastri", Acronym: "PIA", Observations: []SourceLapObservation{{LapNumber: 1, Compound: &compound, StintNumber: &stint, IsPitOutLap: &pitOut}}},
+		}}, nil
+	})
+
+	response, err := NewService(repository).Query(context.Background(), validRequest())
+	if err != nil {
+		t.Fatalf("Query() error = %v", err)
+	}
+	if response.Kind != ResultSuccess || response.Result == nil || response.Coverage.Status != CoveragePartial {
+		t.Fatalf("partial response = %+v", response)
+	}
+	if response.Result.Series[1].Coverage.Status != CoveragePartial || len(response.Warnings) != 1 || response.Warnings[0].Code != WarningDriverLapsMissing || response.Warnings[0].SeriesID != "driver_piastri" {
+		t.Fatalf("partial warnings and series coverage = %+v / %+v", response.Warnings, response.Result.Series)
+	}
+}
+
+func TestServiceReturnsNoDataAndIndependentStaleFreshness(t *testing.T) {
+	t.Parallel()
+	compound := "HARD"
+	stint := 1
+	pitOut := false
+	repository := repositoryFunc(func(context.Context, string, []string) (LapComparisonSource, error) {
+		return LapComparisonSource{SessionID: "session_monaco", ReconciliationFailed: true, Drivers: []SourceDriver{
+			{ID: "driver_leclerc", Name: "Charles Leclerc", Acronym: "LEC", Observations: []SourceLapObservation{{LapNumber: 1, Compound: &compound, StintNumber: &stint, IsPitOutLap: &pitOut}}},
+			{ID: "driver_piastri", Name: "Oscar Piastri", Acronym: "PIA", Observations: []SourceLapObservation{}},
+		}}, nil
+	})
+
+	response, err := NewService(repository).Query(context.Background(), validRequest())
+	if err != nil {
+		t.Fatalf("Query() error = %v", err)
+	}
+	if response.Kind != ResultNoData || response.Result != nil || response.NoData == nil || response.NoData.Code != "no_usable_lap_durations" {
+		t.Fatalf("no-data response = %+v", response)
+	}
+	if response.Coverage.Status != CoveragePartial || response.Freshness.Status != FreshnessStale {
+		t.Fatalf("independent coverage/freshness = %+v / %+v", response.Coverage, response.Freshness)
+	}
+	if len(response.Warnings) != 1 || response.Warnings[0].Code != WarningReconciliationFailed {
+		t.Fatalf("stale warnings = %+v", response.Warnings)
+	}
+}
+
+func TestServiceReversedDriversReturnIdenticalCanonicalResponse(t *testing.T) {
+	t.Parallel()
+	duration := int64(74_123_456)
+	compound := "HARD"
+	stint := 1
+	pitOut := false
+	repository := repositoryFunc(func(_ context.Context, _ string, driverIDs []string) (LapComparisonSource, error) {
+		if !reflect.DeepEqual(driverIDs, []string{"driver_leclerc", "driver_piastri"}) {
+			t.Fatalf("repository driver IDs = %v", driverIDs)
+		}
+		return LapComparisonSource{SessionID: "session_monaco", Drivers: []SourceDriver{
+			{ID: "driver_leclerc", Name: "Charles Leclerc", Acronym: "LEC", Observations: []SourceLapObservation{{LapNumber: 1, DurationMicroseconds: &duration, Compound: &compound, StintNumber: &stint, IsPitOutLap: &pitOut}}},
+			{ID: "driver_piastri", Name: "Oscar Piastri", Acronym: "PIA", Observations: []SourceLapObservation{{LapNumber: 1, DurationMicroseconds: &duration, Compound: &compound, StintNumber: &stint, IsPitOutLap: &pitOut}}},
+		}}, nil
+	})
+	service := NewService(repository)
+	forward, err := service.Query(context.Background(), requestWithDrivers("driver_leclerc", "driver_piastri"))
+	if err != nil {
+		t.Fatalf("forward Query() error = %v", err)
+	}
+	reversed, err := service.Query(context.Background(), requestWithDrivers("driver_piastri", "driver_leclerc"))
+	if err != nil {
+		t.Fatalf("reversed Query() error = %v", err)
+	}
+	if !reflect.DeepEqual(forward, reversed) {
+		t.Fatalf("forward and reversed responses differ:\nforward=%+v\nreversed=%+v", forward, reversed)
 	}
 }
 

@@ -21,13 +21,24 @@ func (s *StatisticsStore) LapComparison(ctx context.Context, sessionPublicID str
 	var sessionID int64
 	var name, sessionType string
 	var cancelled bool
+	var reconciliationFailed bool
 	var sourceFetchedAt, publishedAt *time.Time
 	err := s.db.QueryRow(ctx, `
 		SELECT s.id, s.name, s.type, s.is_cancelled,
-		       GREATEST(p.laps_source_fetched_at, p.stints_source_fetched_at), p.published_at
+		       GREATEST(p.laps_source_fetched_at, p.stints_source_fetched_at), p.published_at,
+		       EXISTS (
+		           SELECT 1
+		           FROM import_runs ir
+		           WHERE ir.unit = 'timing'
+		             AND ir.source_meeting_key = m.source_key
+		             AND ir.status IN ('failed', 'quarantined')
+		             AND ir.started_at > p.published_at
+		             AND (ir.source_session_key IS NULL OR ir.source_session_key = p.source_session_key)
+		       )
 		FROM sessions s
+		JOIN meetings m ON m.id = s.meeting_id
 		LEFT JOIN session_timing_publications p ON p.session_id = s.id
-		WHERE s.public_id = $1`, sessionPublicID).Scan(&sessionID, &name, &sessionType, &cancelled, &sourceFetchedAt, &publishedAt)
+		WHERE s.public_id = $1`, sessionPublicID).Scan(&sessionID, &name, &sessionType, &cancelled, &sourceFetchedAt, &publishedAt, &reconciliationFailed)
 	if err == pgx.ErrNoRows {
 		return statistics.LapComparisonSource{}, statistics.ErrSessionNotFound
 	}
@@ -101,6 +112,7 @@ func (s *StatisticsStore) LapComparison(ctx context.Context, sessionPublicID str
 	}
 	return statistics.LapComparisonSource{
 		SessionID: sessionPublicID, Drivers: drivers, SourceFetchedAt: *sourceFetchedAt, PublishedAt: *publishedAt,
+		ReconciliationFailed: reconciliationFailed,
 	}, nil
 }
 

@@ -73,6 +73,9 @@ func TestStatisticsLapComparisonReturnsAllSourceLapsIncludingNullDurations(t *te
 	if len(comparison.Drivers) != 2 {
 		t.Fatalf("drivers = %+v", comparison.Drivers)
 	}
+	if comparison.ReconciliationFailed {
+		t.Fatal("completed timing publication was marked as having a failed reconciliation")
+	}
 	observations := make(map[string][]domain.Lap, len(comparison.Drivers))
 	for _, driver := range comparison.Drivers {
 		for _, lap := range driver.Observations {
@@ -96,5 +99,23 @@ func TestStatisticsLapComparisonReturnsAllSourceLapsIncludingNullDurations(t *te
 		if driver.Observations[0].Compound == nil || *driver.Observations[0].Compound != hard || driver.Observations[0].StintNumber == nil || *driver.Observations[0].StintNumber != 1 {
 			t.Fatalf("Leclerc stint context = %+v", driver.Observations[0])
 		}
+	}
+
+	runID, err := CreateTimingImportRun(ctx, pool, 2024, target.MeetingKey, timing.now().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("CreateTimingImportRun() error = %v", err)
+	}
+	sessionKey := target.SessionKey
+	if err := FinishImportRun(ctx, pool, runID, ImportRunCompletion{
+		Status: "failed", FinishedAt: timing.now().Add(2 * time.Hour), SourceSessionKey: &sessionKey,
+	}); err != nil {
+		t.Fatalf("FinishImportRun() error = %v", err)
+	}
+	comparison, err = NewStatisticsStore(pool).LapComparison(ctx, race.PublicID.String(), driverIDs)
+	if err != nil {
+		t.Fatalf("LapComparison() after failed reconciliation error = %v", err)
+	}
+	if !comparison.ReconciliationFailed {
+		t.Fatal("newer failed timing reconciliation did not mark the published comparison stale")
 	}
 }

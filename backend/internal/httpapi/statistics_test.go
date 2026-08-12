@@ -144,14 +144,17 @@ func TestStatisticsQueryStatusContracts(t *testing.T) {
 	}
 }
 
-func TestStatisticsQueryPartialCoverageUsesHTTP200(t *testing.T) {
+func TestStatisticsQueryPartialAndStaleUsesHTTP200(t *testing.T) {
 	t.Parallel()
 	service := statisticsQueryFunc(func(context.Context, statistics.QueryRequest) (statistics.QueryResponse, error) {
 		return statistics.QueryResponse{
 			Kind: statistics.ResultSuccess, Analysis: statistics.AnalysisLapComparison,
-			Result: &statistics.LapComparisonResult{}, Warnings: []statistics.Warning{{Code: "driver_laps_missing", Message: "One driver has no usable laps."}},
+			Result: &statistics.LapComparisonResult{}, Warnings: []statistics.Warning{
+				{Code: statistics.WarningDriverLapsMissing, Message: "One driver has no usable laps."},
+				{Code: statistics.WarningReconciliationFailed, Message: "A newer source reconciliation failed."},
+			},
 			Coverage:  statistics.Coverage{Status: statistics.CoveragePartial, Series: []statistics.SeriesCoverage{}},
-			Freshness: statistics.Freshness{Status: statistics.FreshnessFresh},
+			Freshness: statistics.Freshness{Status: statistics.FreshnessStale},
 		}, nil
 	})
 	response := serveStatisticsRequest(statisticsQuery(service), `{}`)
@@ -160,7 +163,7 @@ func TestStatisticsQueryPartialCoverageUsesHTTP200(t *testing.T) {
 	}
 	var body statistics.QueryResponse
 	decodeResponse(t, response, &body)
-	if body.Kind != statistics.ResultSuccess || body.Coverage.Status != statistics.CoveragePartial {
+	if body.Kind != statistics.ResultSuccess || body.Coverage.Status != statistics.CoveragePartial || body.Freshness.Status != statistics.FreshnessStale {
 		t.Fatalf("partial response = %+v", body)
 	}
 }
