@@ -84,10 +84,10 @@ Prove the internal MVP by importing Grand Prix laps and stints for the selected 
 
 **Steps:**
 
-- [ ] Time-box a comparison of free, permissively licensed, maintained, reasonably lightweight, customizable libraries against responsive rendering, every-lap plotting, tooltips, markers, line styles, and keyboard and screen-reader support.
-- [ ] Prefer customizable SVG output for this data size, but select the library from production evidence rather than naming it in advance.
-- [ ] Build the tracer chart with the leading library using the actual API response shape.
-- [ ] Require keyboard-operable controls and tooltip access where practical, an accessible title and description, and redundant line or marker styles without placing every lap in the page tab order.
+- [x] Time-box a comparison of free, permissively licensed, maintained, reasonably lightweight, customizable libraries against responsive rendering, every-lap plotting, tooltips, markers, line styles, and keyboard and screen-reader support.
+- [x] Prefer customizable SVG output for this data size, but select the library from production evidence rather than naming it in advance.
+- [x] Build the tracer chart with the leading library using the actual API response shape.
+- [x] Require keyboard-operable controls and tooltip access where practical, an accessible title and description, and redundant line or marker styles without placing every lap in the page tab order.
 - [ ] Use the complete semantic table as the authoritative accessible representation of every observation.
 - [ ] Record the selected library, rejected alternatives, tradeoffs, and known limitations.
 - [ ] Remove disposable spike code and retain the production implementation.
