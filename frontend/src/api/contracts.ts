@@ -74,6 +74,42 @@ export type RaceResultsResponse = {
   coverage: Coverage
 }
 
+export type LapObservation = {
+  lapNumber: number
+  durationMicroseconds: number | null
+  missingReason: 'source-duration-missing' | null
+  compound: string | null
+  stintNumber: number | null
+  isPitOutLap: boolean | null
+  isStintStart: boolean
+  isStintEnd: boolean
+}
+
+export type LapSeries = {
+  driver: { id: string; name: string; acronym: string }
+  style: {
+    colour: string
+    lineStyle: 'solid' | 'dashed'
+    marker: 'circle' | 'square'
+  }
+  coverage: {
+    seriesId: string
+    status: 'complete' | 'partial'
+    fields: { field: string; available: number; total: number }[]
+  }
+  observations: LapObservation[]
+}
+
+export type LapComparisonResult = {
+  sessionId: string
+  driverIds: string[]
+  title: string
+  dimension: string
+  units: string
+  preferredChartType: string
+  series: LapSeries[]
+}
+
 export type ErrorResponse = {
   error: {
     code: string
